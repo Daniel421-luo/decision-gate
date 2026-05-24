@@ -287,8 +287,8 @@ textarea:focus{outline:none;border-color:var(--purple);}
   <div class="tab-page" id="tab-learn">
     <div class="card">
       <div class="card-header"><span class="ico">📚</span> 每日学习</div>
-      <div class="card-sub">每天 3 道题，2 分钟。答对的 3 天后复习，答错的明天重考。</div>
-      <div class="quiz-score" id="quizSummary">今日：<span id="quizToday">0</span>/<span id="quizTotal">3</span> · 连对 <span id="quizStreak">0</span> 题</div>
+      <div class="card-sub">每天 5 道题 · 6 层级由浅入深。答对 3 天后复习，答错明天重考，连续 3 对即掌握。</div>
+      <div class="quiz-score" id="quizSummary">今日：<span id="quizToday">0</span>/<span id="quizTotal">5</span> · 连对 <span id="quizStreak">0</span> 题</div>
       <div id="quizContent"></div>
     </div>
   </div>
@@ -484,46 +484,85 @@ function useDefaults(){
   showToast('已填入保守默认值');
 }
 async function fetchMarketData(){
-  const key = localStorage.getItem('finnhub_key');
-  if(!key){
-    showToast('⚙️ 请先设置 Finnhub API Key → 点顶部 ⚙️');
+  const fKey = localStorage.getItem('finnhub_key');
+  const tKey = localStorage.getItem('twelvedata_key');
+  if(!fKey && !tKey){
+    showToast('⚙️ 请先设置 API Key → 点顶部 ⚙️');
     return;
   }
   const btn = document.getElementById('btnFetch');
   if(btn){ btn.textContent = '⏳ 获取中...'; btn.disabled = true; }
-  try{
-    const [spyRes, vixRes, tnxRes] = await Promise.all([
-      fetch('https://finnhub.io/api/v1/quote?symbol=SPY&token=' + key),
-      fetch('https://finnhub.io/api/v1/quote?symbol=^VIX&token=' + key),
-      fetch('https://finnhub.io/api/v1/quote?symbol=^TNX&token=' + key)
-    ]);
-    const spy = await spyRes.json();
-    const vix = await vixRes.json();
-    const tnx = await tnxRes.json();
-    if(spy.error){ throw new Error(spy.error); }
-    gateForm.spy = spy.c.toFixed(0);
-    gateForm.vix = vix.c.toFixed(1);
-    gateForm.tenY = tnx.c.toFixed(2);
-    currentStep = 0; renderGate();
-    showToast('✅ SPY ' + gateForm.spy + ' · VIX ' + gateForm.vix + ' · 10Y ' + gateForm.tenY + '%');
-    if(btn){ btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false; }
-  }catch(e){
-    if(btn){ btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false; }
-    showToast('⚠️ 获取失败，请检查 API Key 或手动输入');
+
+  let results = [];
+  // Source 1: Finnhub
+  if(fKey){
+    try{
+      const [spy,vix,tnx] = await Promise.all([
+        fetch('https://finnhub.io/api/v1/quote?symbol=SPY&token='+fKey).then(r=>r.json()),
+        fetch('https://finnhub.io/api/v1/quote?symbol=^VIX&token='+fKey).then(r=>r.json()),
+        fetch('https://finnhub.io/api/v1/quote?symbol=^TNX&token='+fKey).then(r=>r.json())
+      ]);
+      if(!spy.error){ results.push({src:'Finnhub', spy:spy.c, vix:vix.c, tnx:tnx.c}); }
+    }catch(e){}
   }
+  // Source 2: Twelve Data
+  if(tKey){
+    try{
+      const [spy,vix,tnx] = await Promise.all([
+        fetch('https://api.twelvedata.com/price?symbol=SPY&apikey='+tKey).then(r=>r.json()),
+        fetch('https://api.twelvedata.com/price?symbol=VIX&apikey='+tKey).then(r=>r.json()),
+        fetch('https://api.twelvedata.com/price?symbol=TNX&apikey='+tKey).then(r=>r.json())
+      ]);
+      if(spy.price && !spy.code){ results.push({src:'TwelveData', spy:parseFloat(spy.price), vix:parseFloat(vix.price), tnx:parseFloat(tnx.price)}); }
+    }catch(e){}
+  }
+
+  if(results.length === 0){
+    if(btn){ btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false; }
+    showToast('⚠️ 所有数据源失败，请检查 API Key 或手动输入');
+    return;
+  }
+
+  // Cross-validate if multiple sources
+  const primary = results[0];
+  gateForm.spy = primary.spy.toFixed(0);
+  gateForm.vix = primary.vix.toFixed(1);
+  gateForm.tenY = primary.tnx.toFixed(2);
+  currentStep = 0; renderGate();
+
+  let msg = '✅ SPY ' + gateForm.spy + ' · VIX ' + gateForm.vix + ' · 10Y ' + gateForm.tenY + '%';
+  if(results.length >= 2){
+    const spyDiff = Math.abs(results[0].spy - results[1].spy);
+    const pctDiff = (spyDiff / results[0].spy * 100).toFixed(2);
+    if(pctDiff > 2){
+      msg += ' ⚠️ 两源差' + pctDiff + '%';
+    } else {
+      msg += ' ✓ 交叉验证通过 (' + results.map(r=>r.src).join('+') + ')';
+    }
+  } else {
+    msg += ' (' + results[0].src + ' 单源)';
+  }
+  showToast(msg);
+  if(btn){ btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false; }
 }
 
 function showSettings(){
-  const key = localStorage.getItem('finnhub_key') || '';
+  const fKey = localStorage.getItem('finnhub_key') || '';
+  const tKey = localStorage.getItem('twelvedata_key') || '';
   const html = `<div style="padding:16px">
-    <h3 style="margin-bottom:12px">⚙️ 设置 Finnhub API Key</h3>
-    <p style="font-size:.8rem;color:var(--muted);margin-bottom:12px">
-      行情自动获取需要免费的 Finnhub API Key。<br>
-      <a href="https://finnhub.io/register" target="_blank" style="color:var(--purple)">→ 点此注册（30秒，免费）</a><br>
-      注册后在 Dashboard 复制 API Key 粘贴到下面：
+    <h3 style="margin-bottom:12px">⚙️ 数据源设置</h3>
+    <p style="font-size:.78rem;color:var(--muted);margin-bottom:12px">
+      至少设置一个即可使用。两个都设 → 交叉验证更可靠。
     </p>
     <div class="field">
-      <input type="text" id="apiKeyInput" placeholder="粘贴 API Key" value="${key}">
+      <label>Finnhub API Key（首选）</label>
+      <input type="text" id="finnhubKey" placeholder="粘贴 Finnhub Key" value="${fKey}">
+      <div class="help"><a href="https://finnhub.io/register" target="_blank" style="color:var(--purple)">→ 免费注册（30秒）</a></div>
+    </div>
+    <div class="field">
+      <label>Twelve Data API Key（备用 + 交叉验证）</label>
+      <input type="text" id="twelvedataKey" placeholder="粘贴 Twelve Data Key" value="${tKey}">
+      <div class="help"><a href="https://twelvedata.com/apikey" target="_blank" style="color:var(--purple)">→ 免费注册（30秒）</a></div>
     </div>
     <button class="btn btn-primary" onclick="saveApiKey()">💾 保存</button>
     <button class="btn btn-outline" style="margin-top:8px" onclick="renderGate()">← 返回</button>
@@ -534,10 +573,12 @@ function showSettings(){
 }
 
 function saveApiKey(){
-  const val = document.getElementById('apiKeyInput').value.trim();
-  if(!val){ showToast('请输入 API Key'); return; }
-  localStorage.setItem('finnhub_key', val);
-  showToast('✅ API Key 已保存');
+  const fk = document.getElementById('finnhubKey').value.trim();
+  const tk = document.getElementById('twelvedataKey').value.trim();
+  if(fk) localStorage.setItem('finnhub_key', fk);
+  if(tk) localStorage.setItem('twelvedata_key', tk);
+  if(!fk && !tk){ showToast('请至少输入一个 API Key'); return; }
+  showToast('✅ API Key 已保存 (' + (fk?'Finnhub':'') + (fk&&tk?' + ':'') + (tk?'TwelveData':'') + ')');
   resetGate();
 }
 function toggleRow(label, id, val, hint){
@@ -739,26 +780,67 @@ function closeTrade(id){
 // QUIZ ENGINE
 // ═══════════════════════════════════
 const QUIZ_POOL = [
-  { id:'q01', cat:'volatility', type:'概念题', q:'IV Crush 通常在什么时候发生？', opts:['财报发布前','重大事件（财报/FOMC/CPI）落地后','VIX 上涨时','股价大涨时'], ans:1, src:'期权入门指南', exp:'重大事件后不确定性消除，隐含波动率（IV）会迅速下降。这就是为什么事件前买期权很贵——你付了高 IV 的价格。' },
-  { id:'q02', cat:'basics', type:'概念题', q:'裸买 Call 的最大亏损是多少？', opts:['无限','买入时支付的权力金','行权价 × 100','0'], ans:1, src:'期权入门指南', exp:'买 Call 的权利和义务不对称：你只有权利买入，没有义务。所以最大亏损就是买入时付的钱。' },
-  { id:'q03', cat:'strategy', type:'场景题', q:'CPI 数据发布前 2 小时，SPY 748，IV Rank 85。你应该？', opts:['趁 IV 高卖 Put Credit Spread','买 Call 赌数据利好','等待数据落地后再评估','买 Put 对冲'], ans:2, src:'宏观事件交易规则', exp:'事件前 IV 极高，买期权很贵。数据方向不确定。正确做法：等数据落地 + IV crush 完成 + 趋势确认后再入场。' },
-  { id:'q04', cat:'rules', type:'概念题', q:'你的入场框架要求标的距 20 日高回调多少才能入场？', opts:['≥ 1%','≥ 3%','≥ 5%','≥ 10%'], ans:1, src:'期权操盘计划', exp:'回调 ≥ 3% 是硬条件。不满足 = 不开仓。只做大跌反弹，不追高。' },
-  { id:'q05', cat:'rules', type:'决策题', q:'NVDA 距 20 日高回调 4%，IV Rank 45，SPY 在 50 DMA 上方，10Y 波动 5bp。能否入场？', opts:['能 — 所有条件满足','不能 — IV Rank 太低','不能 — 回调不够','不能 — SPY 位置不对'], ans:0, src:'期权操盘计划', exp:'四个条件全部满足：回调≥3%✅ IV Rank 45<80✅ SPY在50DMA上✅ 10Y波动5bp<15bp✅。这是标准出击信号。' },
-  { id:'q06', cat:'rules', type:'概念题', q:'0DTE 期权在你的框架里属于什么？', opts:['高风险高回报策略','事件驱动策略','永远禁止 — 这是赌博','仅在 CPI 日可用'], ans:2, src:'期权操盘计划', exp:'0DTE 在你的禁止清单里——"发现一次，当周停止交易"。这不是策略，是赌博。' },
-  { id:'q07', cat:'strategy', type:'场景题', q:'你持仓 2 张 NVDA Call，现在 +80%。按路线 A，你应该？', opts:['全平落袋','卖一半锁利，剩下一半设保本止损','继续持有等 +200%','加仓'], ans:1, src:'期权操盘计划', exp:'路线 A（≥2 张）：+80% 卖一半锁利，剩下一半设保本止损。这样既锁定了利润，又保留了暴击的可能。' },
-  { id:'q08', cat:'strategy', type:'场景题', q:'你持仓 1 张 SOXX Call，现在 +80%。按路线 B，你应该？', opts:['立即全平','不卖但止损收紧到保本线','加仓 1 张','什么都不做'], ans:1, src:'期权操盘计划', exp:'路线 B（1 张）：+80% 不卖，但止损从 -80% 收紧到保本线。锁住利润，不让盈利变亏损。' },
-  { id:'q09', cat:'risk', type:'概念题', q:'在你的三池弹药系统中，"战略储备金"什么时候能动用？', opts:['任何时候感觉机会来了','期权账户回撤>50%、黑天鹅、重大催化剂','每个月固定释放','从不 — 永远锁仓'], ans:1, src:'期权操盘计划', exp:'储备金有严格的触发条件。不是感觉来了就能用——这是你和自己的契约。' },
-  { id:'q10', cat:'basics', type:'概念题', q:'希腊字母 Delta 代表什么？', opts:['时间衰减速度','波动率敏感度','期权价格对标的股价的敏感度','利率敏感度'], ans:2, src:'期权入门指南', exp:'Delta = 标的股价变动 $1，期权价格变动多少。ATM 约 0.5，深度 ITM 接近 1.0。' },
-  { id:'q11', cat:'volatility', type:'概念题', q:'"IV Rank 80" 是什么意思？', opts:['IV 在过去一年的分布中处于第 80 百分位','波动率是 80%','比昨天高 80%','80% 的交易者有 IV'], ans:0, src:'期权入门指南', exp:'IV Rank = 当前 IV 在过去一年 IV 分布中的位置。80 意味着当前 IV 比过去一年 80% 的时间都高——期权"贵"。' },
-  { id:'q12', cat:'rules', type:'决策题', q:'你的账户里同时持有 NVDA、SOXX、DRAM、INTC 各一张 Call。看到 SOXX 回调 4%，想加仓。可以吗？', opts:['可以 — 回调到位了','不可以 — 同时持仓已达 4 笔上限，先平一笔再开新仓','可以 — SOXX 是主力标的','不可以 — 应该等 INTC 平了再说'], ans:1, src:'期权操盘计划', exp:'同时持仓 ≤ 4 笔是硬上限。你还想开新仓？先平一笔释放兵力。' },
-  { id:'q13', cat:'risk', type:'场景题', q:'你连续亏损了 4 笔标准出击。按框架，应该怎么办？', opts:['加大仓位翻本','暂停 3 天，只观察不开仓','换标的继续','无所谓，继续正常交易'], ans:1, src:'期权操盘计划', exp:'连续亏 4 笔 → 暂停 3 天。这不是惩罚，是给大脑冷却的时间。连续亏损时判断力下降是最危险的。' },
-  { id:'q14', cat:'strategy', type:'概念题', q:'Credit Spread 和裸卖 Put 的核心区别是什么？', opts:['没有区别','Credit Spread 有买入保护腿，最大亏损有限','Credit Spread 收益更高','裸卖 Put 更安全'], ans:1, src:'Credit-Debit-Spread-学习地图', exp:'Credit Spread = Sell + Buy 两条腿，买入腿限定了最大亏损。裸卖 Put 理论上可以亏到零。' },
-  { id:'q15', cat:'rules', type:'决策题', q:'今天是 FOMC 决议日。早上你看到 DRAM 回调了 5%（跌得很漂亮）。你应该？', opts:['趁回调买入 Call — 跌到位了','等 FOMC 落地 + 趋势确认后再入场','买 Put 对冲','先买一半，剩下的等 FOMC'], ans:1, src:'宏观事件交易规则', exp:'事件日禁止开新仓——回调再漂亮也不行。等事件落地、IV crush 完成、趋势确认后再入场。"晚做巧做"。' },
-  { id:'q16', cat:'volatility', type:'概念题', q:'财报前 IV 飙升，此时买 Call 的缺点是什么？', opts:['没有缺点','买得贵 — IV crush 后即使方向对了也可能亏钱','不能买','只有优点'], ans:1, src:'期权入门指南', exp:'财报前 IV 极高 → 你买的 Call 含大量"时间溢价"。财报后 IV crush → 即使股价涨了，IV 暴跌可能吃掉你的方向性收益。' },
-  { id:'q17', cat:'risk', type:'概念题', q:'PDT 规则要求账户低于 $25,000 时，5 天内最多几次日内交易？', opts:['无限','3 次','5 次','1 次'], ans:1, src:'个人量化决策系统', exp:'PDT = Pattern Day Trader。账户 < $25,000 时，5 个交易日 ≤ 3 次日内交易。超过会被限制。' },
-  { id:'q18', cat:'strategy', type:'场景题', q:'一笔 SOXX Call 从 +150% 回撤到 +80%。你的移动止盈触发了吗？', opts:['触发了 — 应该在回撤 25% 时平仓','没有 — 还没到 -80% 止损','应该加仓','不管，继续等'], ans:0, src:'期权操盘计划', exp:'路线 B：+150% 设移动止盈（从最高点回落 -25% 就平仓）。从 +150% 到 +80%，回撤了 70 个百分点，远超 25% 触发线。应该已经平仓了。' },
-  { id:'q19', cat:'basics', type:'概念题', q:'Theta 是什么？', opts:['股价变动对期权价格的影响','波动率对期权价格的影响','时间流逝对期权价格的侵蚀','利率对期权价格的影响'], ans:2, src:'期权入门指南', exp:'Theta = 时间损耗。每天期权都会因为时间流逝而贬值。临近到期时 Theta 加速——这就是为什么不要持有到到期最后一周。' },
-  { id:'q20', cat:'risk', type:'概念题', q:'你的三池系统中，"长期锚"（池三）买的是什么？', opts:['NVDA 个股','SOXX ETF — 买了就不卖','SPY ETF','美国国债'], ans:1, src:'期权操盘计划', exp:'池三 = $500/月买 SOXX，买了就不卖。不是赚钱工具，是心理锚。期权跌 40% 时看一眼——它还在。让你敢睡。' },
+  // ═══ L1: 期权基础 ═══
+  { id:'q01', lv:1, cat:'basics', type:'概念题', q:'买入一张 Call 期权，你获得的是什么权利？', opts:['以行权价卖出股票的权利','以行权价买入股票的权利','强制行权的义务','收取权利金的权利'], ans:1, src:'OCC/CBOE 期权教育', exp:'Call = 买入权。你付权利金换取"在到期前以行权价买入 100 股"的权利，没有义务。' },
+  { id:'q02', lv:1, cat:'basics', type:'概念题', q:'期权买方最大亏损是多少？', opts:['无限','买入时支付的权利金','行权价 × 100','0'], ans:1, src:'OCC/CBOE 期权教育', exp:'买方权利和义务不对称：只有权利没有义务，最大亏损 = 付出的权利金。卖方则相反，亏损理论上无限。' },
+  { id:'q03', lv:1, cat:'basics', type:'概念题', q:'期权的"内在价值"是什么意思？', opts:['时间流逝带来的价值','如果现在行权能赚多少钱','隐含波动率的溢价部分','做市商收取的手续费'], ans:1, src:'OIC 期权基础课程', exp:'内在价值 = max(标的价格 - 行权价, 0) for Call，或 max(行权价 - 标的价格, 0) for Put。虚值期权的内在价值为 0。' },
+  { id:'q04', lv:1, cat:'basics', type:'概念题', q:'期权价格 = 内在价值 + ___？', opts:['行权价','时间价值','Delta','波动率'], ans:1, src:'OIC 期权基础课程', exp:'期权价格 = 内在价值 + 时间价值。时间价值包含"剩下的时间里可能发生的事情"的溢价。到期时时间价值归零。' },
+  { id:'q05', lv:1, cat:'basics', type:'概念题', q:'ATM（平值）期权是什么意思？', opts:['行权价远高于当前股价','行权价远低于当前股价','行权价 ≈ 当前股价','期权已经到期'], ans:2, src:'OIC 期权基础课程', exp:'ATM = At The Money，行权价接近当前股价。ATM 期权的时间价值最大，Gamma 也最大。' },
+  { id:'q06', lv:1, cat:'basics', type:'概念题', q:'Delta = 0.6 的 Call，如果股价涨 $1，期权价格大约涨多少？', opts:['$0.60','$6.00','$0.06','$1.00'], ans:0, src:'OCC 希腊字母入门', exp:'Delta 衡量期权价格对标的股价的敏感度。Delta 0.6 = 股价涨 $1 → 期权涨 ~$0.60。这是线性近似，实际还有 Gamma。' },
+  { id:'q07', lv:1, cat:'basics', type:'概念题', q:'Theta 代表什么？', opts:['股价变动对期权的影响','波动率对期权的影响','时间流逝对期权价格的侵蚀','利率对期权的影响'], ans:2, src:'OCC 希腊字母入门', exp:'Theta = 时间损耗。每天期权因时间流逝而贬值。临到期时 ATM 期权的 Theta 加速，最后一个月掉得最快。' },
+  { id:'q08', lv:1, cat:'basics', type:'概念题', q:'一张标准美股期权合约控制多少股？', opts:['1 股','10 股','100 股','1000 股'], ans:2, src:'OCC 标准化合约规格', exp:'每张标准期权合约 = 100 股。所以权利金 $3.50 的期权实际成本是 $350/张。' },
+
+  // ═══ L2: 策略入门 ═══
+  { id:'q09', lv:2, cat:'strategy', type:'场景题', q:'你持有 100 股 SPY，想每月赚点额外收入。应该用什么策略？', opts:['买 Call 加杠杆','Sell Covered Call（备兑看涨）','买 Put 做保护','裸卖 Put'], ans:1, src:'Tastytrade 策略指南', exp:'Covered Call = 持股 + 卖 Call。你收权利金，代价是如果股价涨过行权价，你的股票可能被 Call 走。适合震荡看涨。' },
+  { id:'q10', lv:2, cat:'strategy', type:'场景题', q:'你看好 NVDA 但嫌直接买正股太贵。想用期权加杠杆做多，该用什么？', opts:['卖 Put','买 Call','卖 Call','买 Put'], ans:1, src:'Tastytrade 策略指南', exp:'买 Call = 用权利金撬动 100 股上涨收益。投入小、杠杆大，但时间损耗 (Theta) 是敌人。方向对但涨太慢也会亏。' },
+  { id:'q11', lv:2, cat:'strategy', type:'概念题', q:'Bull Call Spread（牛市看涨价差）是怎么构建的？', opts:['买低行权价 Call + 卖高行权价 Call','卖低行权价 Call + 买高行权价 Call','买 Call + 买 Put 同一行权价','卖 Call + 卖 Put'], ans:0, src:'OIC 策略课程', exp:'Bull Call Spread = Buy 低行权 Call + Sell 高行权 Call。最大亏损 = 净支出，最大盈利 = 行权价差 - 净支出。成本低于裸买 Call。' },
+  { id:'q12', lv:2, cat:'strategy', type:'概念题', q:'Sell Put（卖 Put）的本质是什么？', opts:['看空股票下跌','愿意以行权价买入股票，同时收权利金','预测股价将大涨','无风险的套利策略'], ans:1, src:'Tastytrade 策略指南', exp:'卖 Put = 你承诺"如果跌到行权价我就买"。适合你想以更低价格接货，或认为不会跌破某价。要确保你愿意且有能力接货。' },
+  { id:'q13', lv:2, cat:'strategy', type:'场景题', q:'你预测 SPY 未来一个月在 740-760 之间震荡，IV 偏高。最佳策略？', opts:['买 Straddle','Sell Iron Condor（卖铁鹰）','买 Call','卖裸 Put'], ans:1, src:'Tastytrade 策略指南', exp:'Iron Condor = 卖一个 OTM Call Spread + 卖一个 OTM Put Spread。适合"不会大涨也不会大跌"的震荡市，高 IV 时权利金更肥。' },
+  { id:'q14', lv:2, cat:'strategy', type:'场景题', q:'你想买 NVDA Call 但觉得权利金太贵。怎样降低成本？', opts:['买更远期的 Call','用 Call Debit Spread 替代裸买 Call','买更多张 Call','买更虚值的 Call'], ans:1, src:'OIC 策略课程', exp:'Call Debit Spread = 买 Call + 卖更高行权 Call。你卖出的 Call 收权利金，抵减成本。但代价是上档利润被封顶。' },
+  { id:'q15', lv:2, cat:'strategy', type:'概念题', q:'Credit Spread 和 Debit Spread 最核心的区别？', opts:['没区别','Credit Spread 开仓收钱（净收入），Debit Spread 开仓付钱（净支出）','Credit Spread 风险更大','只有 Credit Spread 有限亏损'], ans:1, src:'OIC 策略课程', exp:'Credit Spread 开仓时收净权利金（钱进账），靠时间流逝赚钱。Debit Spread 开仓时付净权利金（钱出去），靠方向赚。' },
+  { id:'q16', lv:2, cat:'strategy', type:'场景题', q:'Credit Spread 和裸卖 Put 的核心区别？', opts:['没有区别','Credit Spread 有买入保护腿，最大亏损有限','Credit Spread 收益更高','裸卖 Put 更安全'], ans:1, src:'OIC 策略课程', exp:'Credit Spread = Sell + Buy 两条腿，买入腿限定了最大亏损。裸卖 Put 理论上可以亏到零。' },
+
+  // ═══ L3: 希腊字母 ═══
+  { id:'q17', lv:3, cat:'greeks', type:'概念题', q:'Delta-neutral 是什么意思？', opts:['完全没有风险','整体持仓 Delta 接近 0，股价小波动不影响总价值','期权已经到期','只持有一张期权'], ans:1, src:'CBOE 做市商教育', exp:'Delta-neutral = 组合的 Delta 总和 ≈ 0，股价小波动不赚钱也不亏钱。做市商常用。但 Gamma 还在，大波动仍影响。' },
+  { id:'q18', lv:3, cat:'greeks', type:'计算题', q:'你持有 Call (Delta=0.60, Gamma=0.03)。股价跌 $1。新的 Delta 约多少？', opts:['0.60','0.63','0.57','0.30'], ans:2, src:'OCC 希腊字母进阶', exp:'新 Delta ≈ 旧 Delta + Gamma × 价格变化 = 0.60 + 0.03 × (-1) = 0.57。Gamma 改变了 Delta，这就是为什么 Delta 不是常数。' },
+  { id:'q19', lv:3, cat:'greeks', type:'概念题', q:'Gamma scalping（伽马倒卖）在什么情况下有利可图？', opts:['任何时候都赚钱','实现波动率 > 隐含波动率','IV 很高时','股价不动时'], ans:1, src:'CBOE 做市商教育', exp:'Gamma scalping = 持有正 Gamma + 频繁 Delta 对冲。当实际波幅 > 买入期权时的 IV，倒卖收益超过 Theta 损耗 → 赚钱。做市商就是这样活的。' },
+  { id:'q20', lv:3, cat:'greeks', type:'概念题', q:'Vega 衡量什么？', opts:['时间损耗速度','股价敏感度','期权价格对隐含波动率的敏感度','利率敏感度'], ans:2, src:'OCC 希腊字母入门', exp:'Vega = IV 变动 1 个百分点，期权价格变动多少。买期权 = 做多 Vega（希望 IV 涨），卖期权 = 做空 Vega（希望 IV 跌）。' },
+  { id:'q21', lv:3, cat:'greeks', type:'场景题', q:'临到期时，ATM 期权的 Gamma 会怎样？', opts:['趋近于 0','暴涨 — 可能引发"Gamma 爆炸"','不变','变成负数'], ans:1, src:'CBOE 做市商教育', exp:'临到期 ATM 期权的 Gamma 飙升——股价微小变动都导致 Delta 剧烈跳动。对卖方极度危险，对买方是暴击机会。这就是"Gamma 爆炸"。' },
+  { id:'q22', lv:3, cat:'greeks', type:'概念题', q:'深度虚值期权（far OTM）的 Delta 接近多少？', opts:['1.0','0.5','0','-1.0'], ans:2, src:'OCC 希腊字母入门', exp:'深度虚值期权几乎不可能行权 → Delta ≈ 0。意味着股价变动几乎不影响期权价格。Gamma 也 ≈ 0。' },
+  { id:'q23', lv:3, cat:'greeks', type:'概念题', q:'哪种希腊字母对利率最敏感？', opts:['Delta','Gamma','Vega','Rho'], ans:3, src:'OCC 希腊字母入门', exp:'Rho = 利率敏感度。短期期权通常忽略 Rho。但在你关心的场景（10Y 波动 ≥15bp → 不开仓），利率确实影响期权定价和宏观环境。' },
+  { id:'q24', lv:3, cat:'greeks', type:'场景题', q:'组合 Delta +0.30, Gamma -0.02, Vega -0.01。股价小涨 + IV 上升，结果是？', opts:['一定赚钱','不确定 — 正 Delta 有利，负 Vega 和负 Gamma 拖后腿','一定亏钱','只取决于 Vega'], ans:1, src:'CBOE 做市商教育', exp:'正 Delta 享受股价上涨，但负 Vega 因 IV 上升亏钱，负 Gamma 让 Delta 随上涨而下降。净结果取决于哪个影响更大。' },
+
+  // ═══ L4: 波动率 ═══
+  { id:'q25', lv:4, cat:'volatility', type:'概念题', q:'IV Crush 通常在什么时候发生？', opts:['财报发布前','重大事件（财报/FOMC/CPI）落地后','VIX 上涨时','股价大涨时'], ans:1, src:'Tastytrade 波动率教育', exp:'事件前 IV 飙升（不确定性定价），事件一落地 → 不确定性消失 → IV 暴跌。此时即使方向对了，Vega 亏损也可能吃掉方向收益。' },
+  { id:'q26', lv:4, cat:'volatility', type:'概念题', q:'IV Rank 80 是什么意思？', opts:['IV 比过去一年 80% 的时间都高','波动率是 80%','比昨天高 80%','80% 交易者有 IV'], ans:0, src:'Tastytrade 波动率教育', exp:'IV Rank = 当前 IV 在过去一年 IV 范围中的百分位。80 = 比 80% 的时间都贵 → 适合卖期权；20 = 比 80% 的时间都便宜 → 适合买期权。' },
+  { id:'q27', lv:4, cat:'volatility', type:'概念题', q:'IV 和 HV（历史波动率）的区别是什么？', opts:['完全一样','IV 是市场对未来波动的预期，HV 是过去实际波动的统计','HV 永远比 IV 高','IV 是计算出来的，HV 是靠猜的'], ans:1, src:'Tastytrade 波动率教育', exp:'IV = 市场用期权价格反向推算的"未来预期波动"。HV = 已发生的价格波动的统计。IV-HV 差值 = 波动率风险溢价。' },
+  { id:'q28', lv:4, cat:'volatility', type:'概念题', q:'波动率微笑/偏斜（Volatility Skew）说明什么？', opts:['市场对大幅波动的概率预期是均匀的','虚值 Put 的 IV 通常高于虚值 Call — 市场更怕暴跌','IV 对所有行权价相同','期权定价出错'], ans:1, src:'CBOE 波动率研究', exp:'Put Skew = OTM Put 的 IV > OTM Call 的 IV，尤其在股票/股指。因为市场参与者大量买 Put 对冲尾部风险（怕暴跌），需求推高了 Put 的价格。' },
+  { id:'q29', lv:4, cat:'volatility', type:'场景题', q:'财报前 IV 飙升，你买 Call 赌财报。结果股价涨了 5% 但 Call 反而亏了。为什么？', opts:['不可能发生','IV crush 的 Vega 亏损超过方向收益','做市商操纵','选错了行权价'], ans:1, src:'Tastytrade 波动率教育', exp:'财报前 IV 极高 → 你付了昂贵的"不确定性溢价"。财报后 IV crush → Vega 暴跌。即使股价涨了方向正确，Vega 亏损可能更大。这就是"买对了方向却亏了钱"。' },
+  { id:'q30', lv:4, cat:'volatility', type:'概念题', q:'VIX 指数衡量什么？', opts:['SPY 的价格趋势','SPX 期权的 30 天隐含波动率预期','美债波动率','成交量'], ans:1, src:'CBOE VIX 白皮书', exp:'VIX = SPX 期权的 30 天 IV 加权平均。VIX 高 = 市场恐慌/不确定性高 = 期权贵。VIX < 15 = 低波动环境；VIX > 30 = 高恐慌。' },
+  { id:'q31', lv:4, cat:'volatility', type:'场景题', q:'VIX 在 12（年内低位），你预期波动率要回升。最佳策略？', opts:['卖 Iron Condor','买 Straddle 或 Strangle','卖 Covered Call','裸卖 Put'], ans:1, src:'Tastytrade 波动率教育', exp:'IV 在低位 → 期权便宜 → 适合买期权（做多 Vega）。买 Straddle/Strangle = 同时买 Call + Put，赌大波动。赚 Gamma 也赚 Vega 回升。' },
+
+  // ═══ L5: 风险管理 ═══
+  { id:'q32', lv:5, cat:'risk', type:'概念题', q:'PDT 规则要求账户 < $25,000 时，5 天内最多几次日内交易？', opts:['无限','3 次','5 次','1 次'], ans:1, src:'FINRA PDT 规则', exp:'PDT = Pattern Day Trader。账户 < $25,000 时，5 个交易日 ≤ 3 次日内交易（开+平 = 一次）。超过被限制 90 天。' },
+  { id:'q33', lv:5, cat:'risk', type:'场景题', q:'你连续亏损 4 笔标准出击。按你的框架应该？', opts:['加大仓位翻本','暂停 3 天，只观察不开仓','换标的继续','无所谓，继续'], ans:1, src:'期权操盘计划', exp:'连亏 4 笔 → 暂停 3 天。这不是惩罚，是冷却大脑。连续亏损时判断力急速下降，"翻本心态"是归零最快路径。' },
+  { id:'q34', lv:5, cat:'risk', type:'概念题', q:'凯利公式 (Kelly Criterion) 的核心作用是？', opts:['预测股价方向','计算最优下注比例以最大化长期复利','保证每次赚钱','确定行权价'], ans:1, src:'量化金融经典', exp:'Kelly: f* = (bp - q) / b。结合胜率和赔率算出最优仓位比例。全押 = 迟早归零，太保守 = 浪费机会。实操中常用 1/2 Kelly 或 1/4 Kelly。' },
+  { id:'q35', lv:5, cat:'risk', type:'场景题', q:'你同时持有 NVDA Call + SOXX Call，两者高度相关。风险在哪？', opts:['没风险','黑天鹅时一起暴跌——你没有真正的分散','NVDA 涨 SOXX 一定跌','这种组合不合法'], ans:1, src:'风险管理实务', exp:'NVDA 是 SOXX 最大成分股，相关系数极高 → 你的"分散"是假的。真正的分散要求低相关资产。黑天鹅时它们一起崩。' },
+  { id:'q36', lv:5, cat:'risk', type:'场景题', q:'持仓 SOXX Call 赚了 +80%，你怎么办？', opts:['全平','卖一半锁利 + 剩下一半设保本止损','加仓','换更虚的 Call'], ans:1, src:'期权操盘计划', exp:'+80% → 卖一半锁利（已落袋），剩下一半止损收紧到保本线。既锁定利润又留暴击空间。最差：回到保本线平推。最好：继续起飞。' },
+  { id:'q37', lv:5, cat:'risk', type:'概念题', q:'你的三池系统中"战略储备金"触发条件是什么？', opts:['任何时候感觉机会来了','期权账户回撤 >50%、黑天鹅、重大催化剂','每个月固定释放','永远不动'], ans:1, src:'期权操盘计划', exp:'储备金有严格触发条件——回撤过半、真正的黑天鹅、或罕见的催化剂突变。不是感觉来了就能动。这是你和自己的契约。' },
+  { id:'q38', lv:5, cat:'risk', type:'场景题', q:'你持仓已达 4 笔上限（NVDA/SOXX/DRAM/INTC）。SOXX 回调 4% 想加仓，可以吗？', opts:['可以 — 回调到位了','不可以 — 先平一笔再开新仓','可以 — SOXX 是主力标的','不管上限直接买'], ans:1, src:'期权操盘计划', exp:'同时持仓 ≤ 4 笔是硬上限。想开新仓？先平一笔释放兵力。上限是给你设的保护，不是拿来破的。' },
+
+  // ═══ L6: 事件交易与进阶 ═══
+  { id:'q39', lv:6, cat:'events', type:'场景题', q:'CPI 发布前 2 小时，SPY 748，IV Rank 85。你应该？', opts:['趁 IV 高卖 Credit Spread','买 Call 赌数据利好','等待数据落地 + IV crush 完成后再评估','买 Put 对冲'], ans:2, src:'宏观事件交易规则', exp:'事件前 IV 极高 → 买期权太贵 → 卖期权风险太大。正确：等数据落地 + IV crush 完成 + 方向确认后再入场。慢一步不会错过什么，急一步可能亏掉一切。' },
+  { id:'q40', lv:6, cat:'events', type:'场景题', q:'今天是 FOMC 日，DRAM 回调了 5%。你应该？', opts:['趁回调买入 — 跌到位了','等 FOMC 落地 + 趋势确认后再入场','买 Put 对冲','先买一半'], ans:1, src:'宏观事件交易规则', exp:'事件日禁止开新仓——回调再漂亮也不行。等事件落地、IV crush 完成、趋势确认。"晚做巧做"比"早了踩雷"强一万倍。' },
+  { id:'q41', lv:6, cat:'events', type:'场景题', q:'你持仓一张 Call 穿过财报。财报后股价大涨 10%，但你的 Call 只涨了 20%。为什么？', opts:['做市商出错','IV crush 吃掉大部分涨幅 — Vega 亏损','期权已经到期','股票分红'], ans:1, src:'Tastytrade 事件交易', exp:'财报前 IV 极高 → 你买的 Call 含大量 Vega。财报后 IV crush → Vega 暴跌 30-50 个点。即使股价涨了，方向收益的大部分被 Vega 亏损抵消。这是"买财报"最常见的亏法。' },
+  { id:'q42', lv:6, cat:'events', type:'概念题', q:'Iron Condor（铁鹰）最大利润怎么计算？', opts:['行权价差','收取的净权利金','行权价差 - 净权利金','无限'], ans:1, src:'OIC 进阶策略', exp:'Iron Condor 最大利润 = 开仓时收的净权利金。最大亏损 = 行权价宽度 - 净权利金。选择行权价时，风险回报比是关键。' },
+  { id:'q43', lv:6, cat:'advanced', type:'场景题', q:'你卖了一个 Short Strangle，突然股价向上跳空 5% + IV 飙升 40%。第一步？', opts:['什么都不做','立即买股票对冲正 Delta','卖掉所有持仓','加仓更多 Strangle'], ans:1, src:'CBOE 做市商教育', exp:'Short Strangle 跳空 + IV 飙升 = 双重暴击。第一步：立即 Delta 对冲（买正股或买 Call）中性化 Delta，止损流血。然后再评估是否平仓或调整。' },
+  { id:'q44', lv:6, cat:'advanced', type:'场景题', q:'你持有 Iron Condor，距到期 5 天，股价逼近短 Call 行权价。主要风险是？', opts:['Theta 太快','Gamma 爆炸 — 小波动导致 Delta 剧烈摆动','IV 微微变化','股息'], ans:1, src:'CBOE 做市商教育', exp:'临到期 + 股价逼近短腿 = Gamma 爆炸。股价每跳 $0.10，Delta 可能从 -0.30 跳到 -0.70。对卖方极危险。此时要么平仓要么滚动调整，不能坐等。' },
+  { id:'q45', lv:6, cat:'advanced', type:'场景题', q:'IV 在历史低位（IV Rank < 10），你预期波动率要回归。哪种策略最优？', opts:['卖 Iron Condor','买 Calendar Spread（日历价差）','卖 Covered Call','裸卖高 IV 股票 Put'], ans:1, src:'Tastytrade 进阶策略', exp:'低 IV 时买 Calendar Spread（卖近月 + 买远月）→ 近月 Theta 衰减快于远月 → 赚时间差。且正 Vega 在 IV 回升时受益。低 IV 时卖期权是捡钢镚。' },
+  { id:'q46', lv:6, cat:'advanced', type:'场景题', q:'在流动性差的市场做 Delta 动态对冲，最大挑战是什么？', opts:['方向判断','宽买卖价差 → 对冲成本过高','没有挑战','找不到标的'], ans:1, src:'CBOE 做市商教育', exp:'流动性差 = bid-ask spread 宽。每次对冲都要"过价差"——买入用 ask，卖出用 bid。频繁对冲 → 价差累计成本吃掉收益。' },
+  { id:'q47', lv:6, cat:'advanced', type:'概念题', q:'Collar（领圈策略）的构建方法是？', opts:['持股 + 卖 Call + 买 Put','只买 Put','只卖 Call','买 Call + 买 Put'], ans:0, src:'OIC 进阶策略', exp:'Collar = 持有正股 + 买 Put（保护下行）+ 卖 Call（抵减 Put 成本）。成本可接近零。代价是上档被封顶。适合"想保护但不想花钱"的场景。' },
+  { id:'q48', lv:6, cat:'advanced', type:'概念题', q:'你的入场框架要求回调 ≥ 3% 的理由是什么？', opts:['随便写的','只做大跌反弹 — 不追高，等别人恐慌完再入场','3% 是魔法数字','为了算得快'], ans:1, src:'期权操盘计划', exp:'回调 ≥ 3% = 确认"有人已经在恐慌卖出"。你在他们卖完后再进去，成本更低、安全边际更高。追高是散户最常见的亏法。' },
+  { id:'q49', lv:6, cat:'events', type:'概念题', q:'0DTE 在你的框架里属于什么？', opts:['高风险高回报策略','永远禁止 — 这是赌博','仅在 CPI 日可用','专业策略'], ans:1, src:'期权操盘计划', exp:'0DTE 在你的禁止清单——"发现一次，当周停止交易"。到期日 Gamma 爆炸 + Theta 归零的叠加效应让 0DTE 几乎等于赌博。' },
+  { id:'q50', lv:6, cat:'advanced', type:'概念题', q:'"三池弹药系统"中的池三（长期锚）是什么？', opts:['NVDA 个股','SOXX ETF — 每月定投，买了不卖','SPY ETF','美国国债'], ans:1, src:'期权操盘计划', exp:'池三 = $500/月买 SOXX，买了就不卖。不是赚钱工具，是心理锚。期权跌 40% 时看一眼——它还在。让你敢睡。' },
 ];
 
 function getTodayQuestions(){
@@ -766,21 +848,29 @@ function getTodayQuestions(){
   if(data.quiz.daily[today] && data.quiz.daily[today].length > 0){
     return data.quiz.daily[today];
   }
-  // Pick 3 questions: prioritize due reviews, then random
-  const due = QUIZ_POOL.filter(q => {
-    const ans = data.quiz.answers[q.id];
-    if(!ans) return true; // Never answered
-    if(data.quiz.mastered.includes(q.id)) return false;
-    const lastDate = ans.history[ans.history.length-1]?.date;
-    if(!lastDate) return true;
-    const last = new Date(lastDate);
-    const next = new Date(last);
-    next.setDate(next.getDate() + (ans.streak >= 3 ? 7 : (ans.streak >= 1 ? 3 : 1)));
-    return new Date() >= next;
-  });
+  // 5 questions daily, one from each level 1-5, level 6 cycles in
   const picked = [];
-  const pool = due.length >= 3 ? due : [...QUIZ_POOL].sort(()=>Math.random()-.5);
-  for(let i=0;i<Math.min(3,pool.length);i++) picked.push(pool[i].id);
+  const levels = [1,2,3,4,5,6];
+  const seed = parseInt(today.replace(/-/g,'')) % 6;
+  const order = [...levels.slice(seed), ...levels.slice(0,seed)];
+
+  for(let lv of order){
+    if(picked.length >= 5) break;
+    // Prefer due reviews in this level
+    const pool = QUIZ_POOL.filter(q => q.lv === lv);
+    const due = pool.filter(q => {
+      const ans = data.quiz.answers[q.id];
+      if(!ans) return true;
+      if(data.quiz.mastered.includes(q.id)) return false;
+      const last = ans.history[ans.history.length-1]?.date;
+      if(!last) return true;
+      const next = new Date(last);
+      next.setDate(next.getDate() + (ans.streak >= 3 ? 7 : (ans.streak >= 1 ? 3 : 1)));
+      return new Date() >= next;
+    });
+    const q = due.length > 0 ? due[Math.floor(Math.random()*due.length)] : pool[Math.floor(Math.random()*pool.length)];
+    if(q) picked.push(q.id);
+  }
   data.quiz.daily[today] = picked;
   save(data);
   return picked;
@@ -802,7 +892,7 @@ function renderLearn(){
     const ans = data.quiz.answers[q.id];
     const answeredToday = ans?.history?.some(h => h.date === today);
     html += `<div class="quiz-card">
-      <div class="quiz-type">${q.type} · ${q.cat}</div>
+      <div class="quiz-type">L${q.lv} ${q.type} · ${q.cat}</div>
       <div class="quiz-question">${i+1}. ${q.q}</div>`;
     if(answeredToday){
       const last = ans.history[ans.history.length-1];
@@ -902,6 +992,14 @@ function renderDash(){
   const totalAns = Object.values(data.quiz.answers).reduce((s,a)=>s+a.history.length,0);
   const correctAns = Object.values(data.quiz.answers).reduce((s,a)=>s+a.history.filter(h=>h.correct).length,0);
   const correctRate = totalAns > 0 ? Math.round(correctAns/totalAns*100) : 0;
+  // Level breakdown
+  const levelNames = {1:'基础',2:'策略',3:'希腊',4:'波动率',5:'风险',6:'进阶'};
+  let levelStats = {};
+  [1,2,3,4,5,6].forEach(lv => {
+    const qs = QUIZ_POOL.filter(q => q.lv === lv);
+    const mastered = qs.filter(q => data.quiz.mastered.includes(q.id)).length;
+    levelStats[lv] = {total: qs.length, mastered};
+  });
 
   document.getElementById('dQTotal').textContent = totalAns || '--';
   document.getElementById('dQCorrect').textContent = totalAns > 0 ? correctRate+'%' : '--';
@@ -909,12 +1007,16 @@ function renderDash(){
   document.getElementById('dQMastered').textContent = data.quiz.mastered.length || '--';
 
   let learnInsight = '';
-  if(data.quiz.mastered.length >= 3){
-    learnInsight = `<strong>📚 ${data.quiz.mastered.length}</strong> 个知识点已掌握。继续保持每天 3 题的习惯。`;
+  if(data.quiz.mastered.length >= 5){
+    learnInsight = '<strong>📚 ' + data.quiz.mastered.length + '</strong> 个知识点已掌握。<br>';
+    learnInsight += '<span style="font-size:.72rem">' + [1,2,3,4,5,6].map(lv => {
+      const s = levelStats[lv];
+      return 'L'+lv+levelNames[lv]+' ' + s.mastered + '/' + s.total;
+    }).join(' · ') + '</span>';
   } else if(totalAns > 0){
-    learnInsight = `📖 已答 ${totalAns} 题，正确率 ${correctRate}%。每天 2 分钟，积少成多。`;
+    learnInsight = '📖 已答 ' + totalAns + ' 题，正确率 ' + correctRate + '%。每天 5 题，从基础到进阶层层打通。';
   } else {
-    learnInsight = '🎯 去"学习"Tab 做今天的 3 道题吧。';
+    learnInsight = '🎯 去"学习"Tab 做今天的 5 道题吧。每天 2 分钟，6 层级由浅入深。';
   }
   document.getElementById('dLearnInsight').innerHTML = learnInsight;
 }

@@ -486,25 +486,27 @@ async function fetchMarketData(){
   const btn = document.getElementById('btnFetch');
   btn.textContent = '⏳ 获取中...'; btn.disabled = true;
   try{
-    const [spyRes, vixRes, tnxRes] = await Promise.all([
-      fetch('https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=1d'),
-      fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=1d'),
-      fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5ETNX?interval=1d&range=1d')
-    ]);
-    const spy = await spyRes.json();
-    const vix = await vixRes.json();
-    const tnx = await tnxRes.json();
-    const spyPrice = spy.chart.result[0].meta.regularMarketPrice.toFixed(0);
-    const vixPrice = vix.chart.result[0].meta.regularMarketPrice.toFixed(1);
-    const tenY = tnx.chart.result[0].meta.regularMarketPrice.toFixed(2);
-    gateForm.spy = spyPrice; gateForm.vix = vixPrice; gateForm.tenY = tenY;
+    const res = await fetch('/decision-gate/data/market.json', {cache: 'no-cache'});
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+    if(!d.spy || d.spy === 0) throw new Error('No data');
+    gateForm.spy = String(d.spy);
+    gateForm.vix = String(d.vix);
+    gateForm.tenY = String(d.tenY);
     currentStep = 0; renderGate();
-    showToast(`✅ SPY ${spyPrice} · VIX ${vixPrice} · 10Y ${tenY}%`);
+    const ago = d.updated ? ' · ' + timeAgo(d.updated) : '';
+    showToast('✅ SPY ' + d.spy + ' · VIX ' + d.vix + ' · 10Y ' + d.tenY + '%' + ago);
     btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false;
   }catch(e){
     btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false;
     showToast('⚠️ 获取失败，请手动输入或点「使用保守默认值」');
   }
+}
+function timeAgo(ts){
+  const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
+  if(diff < 1) return '刚刚更新';
+  if(diff < 60) return diff + '分钟前';
+  return Math.floor(diff/60) + '小时前';
 }
 function toggleRow(label, id, val, hint){
   return `<div class="toggle-row">

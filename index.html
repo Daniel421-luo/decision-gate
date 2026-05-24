@@ -254,6 +254,7 @@ textarea:focus{outline:none;border-color:var(--purple);}
       v1.0 <button class="refresh-btn" onclick="checkUpdate()">🔄 更新</button>
       <button class="refresh-btn" onclick="exportData()">📤 导出</button>
       <button class="refresh-btn" onclick="document.getElementById('importFile').click()">📥 导入</button>
+      <button class="refresh-btn" onclick="showSettings()">⚙️</button>
     </div>
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
   </div>
@@ -483,30 +484,61 @@ function useDefaults(){
   showToast('已填入保守默认值');
 }
 async function fetchMarketData(){
+  const key = localStorage.getItem('finnhub_key');
+  if(!key){
+    showToast('⚙️ 请先设置 Finnhub API Key → 点顶部 ⚙️');
+    return;
+  }
   const btn = document.getElementById('btnFetch');
-  btn.textContent = '⏳ 获取中...'; btn.disabled = true;
+  if(btn){ btn.textContent = '⏳ 获取中...'; btn.disabled = true; }
   try{
-    const res = await fetch('/decision-gate/data/market.json', {cache: 'no-cache'});
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    const d = await res.json();
-    if(!d.spy || d.spy === 0) throw new Error('No data');
-    gateForm.spy = String(d.spy);
-    gateForm.vix = String(d.vix);
-    gateForm.tenY = String(d.tenY);
+    const [spyRes, vixRes, tnxRes] = await Promise.all([
+      fetch('https://finnhub.io/api/v1/quote?symbol=SPY&token=' + key),
+      fetch('https://finnhub.io/api/v1/quote?symbol=^VIX&token=' + key),
+      fetch('https://finnhub.io/api/v1/quote?symbol=^TNX&token=' + key)
+    ]);
+    const spy = await spyRes.json();
+    const vix = await vixRes.json();
+    const tnx = await tnxRes.json();
+    if(spy.error){ throw new Error(spy.error); }
+    gateForm.spy = spy.c.toFixed(0);
+    gateForm.vix = vix.c.toFixed(1);
+    gateForm.tenY = tnx.c.toFixed(2);
     currentStep = 0; renderGate();
-    const ago = d.updated ? ' · ' + timeAgo(d.updated) : '';
-    showToast('✅ SPY ' + d.spy + ' · VIX ' + d.vix + ' · 10Y ' + d.tenY + '%' + ago);
-    btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false;
+    showToast('✅ SPY ' + gateForm.spy + ' · VIX ' + gateForm.vix + ' · 10Y ' + gateForm.tenY + '%');
+    if(btn){ btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false; }
   }catch(e){
-    btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false;
-    showToast('⚠️ 获取失败，请手动输入或点「使用保守默认值」');
+    if(btn){ btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false; }
+    showToast('⚠️ 获取失败，请检查 API Key 或手动输入');
   }
 }
-function timeAgo(ts){
-  const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
-  if(diff < 1) return '刚刚更新';
-  if(diff < 60) return diff + '分钟前';
-  return Math.floor(diff/60) + '小时前';
+
+function showSettings(){
+  const key = localStorage.getItem('finnhub_key') || '';
+  const html = `<div style="padding:16px">
+    <h3 style="margin-bottom:12px">⚙️ 设置 Finnhub API Key</h3>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:12px">
+      行情自动获取需要免费的 Finnhub API Key。<br>
+      <a href="https://finnhub.io/register" target="_blank" style="color:var(--purple)">→ 点此注册（30秒，免费）</a><br>
+      注册后在 Dashboard 复制 API Key 粘贴到下面：
+    </p>
+    <div class="field">
+      <input type="text" id="apiKeyInput" placeholder="粘贴 API Key" value="${key}">
+    </div>
+    <button class="btn btn-primary" onclick="saveApiKey()">💾 保存</button>
+    <button class="btn btn-outline" style="margin-top:8px" onclick="renderGate()">← 返回</button>
+  </div>`;
+  document.getElementById('gateContent').innerHTML = html;
+  document.getElementById('gateSub').textContent = '设置';
+  document.getElementById('steps').innerHTML = '';
+}
+
+function saveApiKey(){
+  const val = document.getElementById('apiKeyInput').value.trim();
+  if(!val){ showToast('请输入 API Key'); return; }
+  localStorage.setItem('finnhub_key', val);
+  showToast('✅ API Key 已保存');
+  resetGate();
 }
 function toggleRow(label, id, val, hint){
   return `<div class="toggle-row">

@@ -1,0 +1,15 @@
+{
+  "name": "期权决策辅助",
+  "short_name": "决策门",
+  "description": "美股期权交易决策辅助系统",
+  "start_url": "/decision-gate/",
+  "display": "standalone",
+  "background_color": "#f2f2f7",
+  "theme_color": "#7c3aed",
+  "orientation": "portrait",
+  "icons": [{
+    "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%237c3aed'/><text x='50' y='50' text-anchor='middle' dominant-baseline='central' font-size='50'>🧠</text></svg>",
+    "sizes": "any",
+    "type": "image/svg+xml"
+  }]
+}

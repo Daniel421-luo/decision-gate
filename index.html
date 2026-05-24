@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="/decision-gate/manifest.json">
+<title>🧠 期权决策辅助</title>
+<style>
+:root {
+  --bg: #f2f2f7;
+  --surface: #ffffff;
+  --surface2: #f2f2f7;
+  --border: #e5e5ea;
+  --text: #1c1c1e;
+  --muted: #8e8e93;
+  --purple: #7c3aed;
+  --purple-bg: #7c3aed10;
+  --purple-border: #7c3aed30;
+  --green: #34c759;
+  --green-bg: #34c75915;
+  --red: #ff3b30;
+  --red-bg: #ff3b3015;
+  --amber: #ff9500;
+  --amber-bg: #ff950015;
+  --blue: #007aff;
+  --radius: 14px;
+  --radius-sm: 10px;
+  --safe-bottom: env(safe-area-inset-bottom, 16px);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--bg);color:var(--text);line-height:1.5;
+  min-height:100vh;padding-bottom:80px;
+  -webkit-font-smoothing:antialiased;
+}
+.container{max-width:480px;margin:0 auto;padding:16px;}
+
+/* Header */
+.header{padding:20px 0 12px;text-align:center;}
+.header h1{font-size:1.3rem;font-weight:700;}
+.header .score-row{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:6px;flex-wrap:wrap;}
+.header .trust-badge{
+  display:inline-flex;align-items:center;gap:6px;
+  background:var(--surface2);padding:6px 14px;border-radius:20px;
+  font-size:.8rem;font-weight:600;
+}
+.trust-badge .val{color:var(--purple);font-size:1.1rem;}
+.trust-badge .trend{font-size:.7rem;}
+.trust-badge .trend.up{color:var(--green);}
+.version-row{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:4px;font-size:.65rem;color:var(--muted)}
+.refresh-btn{background:var(--surface2);border:1px solid var(--border);color:var(--purple);padding:2px 10px;border-radius:10px;font-size:.65rem;cursor:pointer;font-family:inherit;}
+.refresh-btn:active{opacity:.7;}
+
+/* Event banner */
+.event-banner{
+  background:var(--amber-bg);border:1px solid #ff950030;
+  border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:14px;
+  font-size:.8rem;display:none;
+}
+.event-banner.show{display:flex;align-items:center;gap:8px;}
+.event-banner .icon{font-size:1.2rem;}
+
+/* Tab bar */
+.tab-bar{
+  position:fixed;bottom:0;left:0;right:0;
+  background:var(--surface);border-top:1px solid var(--border);
+  display:flex;justify-content:space-around;
+  padding:8px 0 var(--safe-bottom);
+  z-index:100;max-width:480px;margin:0 auto;
+}
+.tab-btn{
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  background:none;border:none;color:var(--muted);
+  font-size:.65rem;padding:6px 12px;cursor:pointer;
+  transition:color .15s;font-family:inherit;
+}
+.tab-btn .ico{font-size:1.2rem;}
+.tab-btn.active{color:var(--purple);}
+
+/* Tab content */
+.tab-page{display:none;}
+.tab-page.active{display:block;}
+
+/* Cards */
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:18px;margin-bottom:12px;
+}
+.card-header{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-weight:600;font-size:.95rem;}
+.card-header .ico{font-size:1.1rem;}
+.card-sub{font-size:.75rem;color:var(--muted);margin-bottom:14px;}
+
+/* Step progress */
+.steps{display:flex;gap:4px;margin-bottom:16px;}
+.step-dot{flex:1;height:3px;border-radius:2px;background:var(--border);transition:background .2s;}
+.step-dot.done{background:var(--purple);}
+.step-dot.active{background:var(--purple);box-shadow:0 0 6px var(--purple);}
+
+/* Form elements */
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:.78rem;color:var(--muted);margin-bottom:4px;}
+.field .help{font-size:.68rem;color:var(--muted);margin-top:2px;}
+input[type="text"],input[type="number"],select{
+  width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);
+  border-radius:var(--radius-sm);color:var(--text);font-size:.9rem;
+  font-family:inherit;-webkit-appearance:none;
+}
+input:focus,select:focus{outline:none;border-color:var(--purple);}
+textarea{
+  width:100%;min-height:60px;padding:10px 12px;background:var(--bg);
+  border:1px solid var(--border);border-radius:var(--radius-sm);
+  color:var(--text);font-size:.85rem;font-family:inherit;resize:vertical;
+}
+textarea:focus{outline:none;border-color:var(--purple);}
+
+/* Toggle row */
+.toggle-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 0;border-bottom:1px solid var(--border);
+}
+.toggle-row:last-child{border-bottom:none;}
+.toggle-label{font-size:.85rem;flex:1;}
+.toggle-hint{font-size:.7rem;color:var(--muted);margin-left:6px;}
+.toggle{
+  display:flex;gap:4px;flex-shrink:0;
+}
+.toggle button{
+  padding:6px 14px;border-radius:16px;border:1.5px solid var(--border);
+  background:none;cursor:pointer;font-size:.8rem;color:var(--muted);
+  transition:all .12s;font-family:inherit;
+}
+.toggle button.on{background:var(--green-bg);border-color:var(--green);color:var(--green);font-weight:600;}
+.toggle button.off{background:var(--red-bg);border-color:var(--red);color:var(--red);font-weight:600;}
+
+/* Buttons */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:12px 24px;border-radius:var(--radius-sm);border:none;
+  cursor:pointer;font-size:.9rem;font-weight:600;font-family:inherit;
+  transition:all .15s;width:100%;text-align:center;
+}
+.btn-primary{background:var(--purple);color:#fff;}
+.btn-primary:hover{background:#7c3aed;}
+.btn-primary:disabled{opacity:.4;pointer-events:none;}
+.btn-outline{background:none;border:1.5px solid var(--border);color:var(--text);}
+.btn-danger{background:none;border:1.5px solid var(--red);color:var(--red);}
+.btn-sm{padding:8px 16px;font-size:.8rem;width:auto;}
+.btn-row{display:flex;gap:8px;}
+.btn-row .btn{flex:1;}
+
+/* Decision result */
+.result-banner{
+  padding:16px;border-radius:var(--radius-sm);text-align:center;margin-bottom:12px;
+}
+.result-banner.go{background:var(--green-bg);border:1px solid #34c75930;}
+.result-banner.no{background:var(--red-bg);border:1px solid #ff3b3030;}
+.result-banner.wait{background:var(--amber-bg);border:1px solid #ff950030;}
+.result-banner .big{font-size:2.5rem;margin-bottom:4px;}
+.result-banner .msg{font-weight:600;font-size:.95rem;}
+.result-banner .detail{font-size:.78rem;color:var(--muted);margin-top:4px;}
+
+/* Trade list */
+.trade-item{
+  background:var(--surface2);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:8px;
+  border-left:3px solid var(--border);
+}
+.trade-item.compliant{border-left-color:var(--green);}
+.trade-item.violated{border-left-color:var(--red);}
+.trade-row-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
+.trade-symbol{font-weight:700;font-size:.95rem;}
+.trade-result{font-weight:700;}
+.trade-result.win{color:var(--green);}
+.trade-result.loss{color:var(--red);}
+.trade-row-mid{font-size:.78rem;color:var(--muted);margin-bottom:2px;}
+.trade-row-bot{font-size:.72rem;color:var(--muted);display:flex;gap:10px;}
+
+/* Quiz */
+.quiz-card{background:var(--surface2);border-radius:var(--radius);padding:20px;margin-bottom:12px;}
+.quiz-type{font-size:.7rem;color:var(--purple);font-weight:600;margin-bottom:6px;text-transform:uppercase;}
+.quiz-question{font-size:.9rem;font-weight:500;margin-bottom:16px;line-height:1.5;}
+.quiz-options{list-style:none;}
+.quiz-options li{
+  padding:12px 14px;margin-bottom:6px;border-radius:var(--radius-sm);
+  border:1.5px solid var(--border);cursor:pointer;font-size:.85rem;
+  transition:all .15s;
+}
+.quiz-options li:hover{border-color:var(--purple-border);}
+.quiz-options li.selected{border-color:var(--purple);background:var(--purple-bg);}
+.quiz-options li.correct{border-color:var(--green);background:var(--green-bg);color:var(--green);}
+.quiz-options li.wrong{border-color:var(--red);background:var(--red-bg);color:var(--red);}
+.quiz-feedback{font-size:.82rem;margin-top:10px;padding:10px;border-radius:var(--radius-sm);display:none;}
+.quiz-feedback.show{display:block;}
+.quiz-feedback.good{background:var(--green-bg);}
+.quiz-feedback.bad{background:var(--red-bg);}
+.quiz-source{font-size:.72rem;color:var(--muted);margin-top:6px;}
+.quiz-score{text-align:center;padding:8px;font-size:.85rem;color:var(--muted);}
+
+/* Stats */
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}
+.stat-item{background:var(--surface2);border-radius:var(--radius-sm);padding:14px;text-align:center;}
+.stat-item .num{font-size:1.5rem;font-weight:700;}
+.stat-item .lbl{font-size:.7rem;color:var(--muted);margin-top:2px;}
+.stat-item .num.green{color:var(--green);}
+.stat-item .num.red{color:var(--red);}
+.stat-item .num.purple{color:var(--purple);}
+
+.insight-box{
+  background:var(--purple-bg);border:1px solid var(--purple-border);
+  border-radius:var(--radius-sm);padding:12px 14px;font-size:.8rem;margin-top:10px;
+}
+.insight-box strong{color:var(--purple);}
+
+/* Date nav */
+.date-nav{
+  display:flex;align-items:center;gap:8px;justify-content:center;margin-bottom:10px;
+}
+.date-nav button{
+  background:var(--surface2);border:none;color:var(--text);
+  padding:6px 14px;border-radius:var(--radius-sm);cursor:pointer;
+  font-size:.85rem;font-family:inherit;
+}
+.date-nav span{font-size:.85rem;font-weight:600;}
+
+/* Toast */
+.toast{
+  position:fixed;bottom:100px;left:50%;transform:translateX(-50%);
+  background:var(--purple);color:#fff;padding:10px 20px;
+  border-radius:20px;font-size:.8rem;font-weight:600;z-index:200;
+  opacity:0;pointer-events:none;transition:opacity .3s;
+}
+.toast.show{opacity:1;}
+
+/* links in quiz */
+.quiz-source a{color:var(--purple);text-decoration:underline;}
+</style>
+</head>
+<body>
+
+<div class="container" id="app">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>🧠 期权决策辅助</h1>
+    <div class="score-row">
+      <div class="trust-badge">
+        信任分 <span class="val" id="trustScore">--</span>
+        <span class="trend" id="trustTrend"></span>
+      </div>
+    </div>
+    <div class="version-row">
+      v1.0 <button class="refresh-btn" onclick="checkUpdate()">🔄 更新</button>
+      <button class="refresh-btn" onclick="exportData()">📤 导出</button>
+      <button class="refresh-btn" onclick="document.getElementById('importFile').click()">📥 导入</button>
+    </div>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+  </div>
+
+  <!-- Event Banner -->
+  <div class="event-banner" id="eventBanner">
+    <span class="icon">📅</span>
+    <span id="eventText"></span>
+  </div>
+
+  <!-- Tab 1: Decision Gate -->
+  <div class="tab-page active" id="tab-gate">
+    <div class="card">
+      <div class="card-header"><span class="ico">🔍</span> 今日决策门</div>
+      <div class="card-sub" id="gateSub">交易前必须完成。不通过就不开仓。</div>
+      <div class="steps" id="steps"><div class="step-dot active"></div><div class="step-dot"></div><div class="step-dot"></div><div class="step-dot"></div></div>
+      <div id="gateContent"></div>
+    </div>
+  </div>
+
+  <!-- Tab 2: Trade Log -->
+  <div class="tab-page" id="tab-log">
+    <div class="card">
+      <div class="card-header"><span class="ico">📝</span> 交易日志</div>
+      <div id="logList"><div style="text-align:center;color:var(--muted);padding:20px;font-size:.85rem">还没有交易记录</div></div>
+    </div>
+  </div>
+
+  <!-- Tab 3: Learn -->
+  <div class="tab-page" id="tab-learn">
+    <div class="card">
+      <div class="card-header"><span class="ico">📚</span> 每日学习</div>
+      <div class="card-sub">每天 3 道题，2 分钟。答对的 3 天后复习，答错的明天重考。</div>
+      <div class="quiz-score" id="quizSummary">今日：<span id="quizToday">0</span>/<span id="quizTotal">3</span> · 连对 <span id="quizStreak">0</span> 题</div>
+      <div id="quizContent"></div>
+    </div>
+  </div>
+
+  <!-- Tab 4: Dashboard -->
+  <div class="tab-page" id="tab-dash">
+    <div class="card">
+      <div class="card-header"><span class="ico">📊</span> 信任看板</div>
+      <div class="stat-grid">
+        <div class="stat-item"><div class="num purple" id="dGateRate">--</div><div class="lbl">决策门使用率</div></div>
+        <div class="stat-item"><div class="num green" id="dCompWin">--</div><div class="lbl">合规交易胜率</div></div>
+        <div class="stat-item"><div class="num red" id="dVioWin">--</div><div class="lbl">违规交易胜率</div></div>
+        <div class="stat-item"><div class="num" id="dBlock">--</div><div class="lbl">系统拦截次数</div></div>
+      </div>
+      <div class="insight-box" id="dInsight"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="ico">📈</span> 学习进度</div>
+      <div class="stat-grid">
+        <div class="stat-item"><div class="num purple" id="dQTotal">--</div><div class="lbl">总答题</div></div>
+        <div class="stat-item"><div class="num green" id="dQCorrect">--</div><div class="lbl">正确率</div></div>
+        <div class="stat-item"><div class="num" id="dQStreak">--</div><div class="lbl">最长连对</div></div>
+        <div class="stat-item"><div class="num" id="dQMastered">--</div><div class="lbl">已掌握</div></div>
+      </div>
+      <div class="insight-box" id="dLearnInsight"></div>
+    </div>
+  </div>
+
+  <!-- Tab Bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="gate"><span class="ico">🔍</span>决策门</button>
+    <button class="tab-btn" data-tab="log"><span class="ico">📝</span>日志</button>
+    <button class="tab-btn" data-tab="learn"><span class="ico">📚</span>学习</button>
+    <button class="tab-btn" data-tab="dash"><span class="ico">📊</span>看板</button>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════
+// DATA MODEL
+// ═══════════════════════════════════
+const KEY = 'decision-system-v1';
+const now = () => new Date().toISOString().slice(0,10);
+
+function load(){ try{return JSON.parse(localStorage.getItem(KEY))||initData();}catch{return initData();} }
+function save(d){ localStorage.setItem(KEY,JSON.stringify(d)); }
+
+function initData(){
+  return {
+    gates: {},
+    trades: [],
+    quiz: { answers:{}, daily:{}, streak:0, maxStreak:0, mastered:[] }
+  };
+}
+
+let data = load();
+let currentStep = 0;
+let gateForm = { spy:'', vix:'', event:'', tenY:'', symbol:'', pullback:null, ivRank:null, spy50DMA:null, tenYok:null, size:'standard', dte:'30', stopLoss:'', takeProfit:'', reason:'' };
+let quizAnswered = false;
+let quizResults = [];
+
+// ═══════════════════════════════════
+// TAB NAVIGATION
+// ═══════════════════════════════════
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', ()=>{
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tab-page').forEach(p=>p.classList.remove('active'));
+    document.getElementById('tab-'+tab).classList.add('active');
+    if(tab==='gate') renderGate();
+    if(tab==='log') renderLog();
+    if(tab==='learn') renderLearn();
+    if(tab==='dash') renderDash();
+  });
+});
+
+// ═══════════════════════════════════
+// DECISION GATE
+// ═══════════════════════════════════
+function renderGate(){
+  const today = now();
+  const g = data.gates[today];
+  if(g && g.completed){
+    showGateResult(g);
+  } else {
+    showGateStep(currentStep);
+  }
+  // Event check
+  checkEvents(today);
+}
+
+function checkEvents(d){
+  const events = {
+    '2026-06-11': 'CPI 发布日 ⚠️ 数据前不开仓',
+  };
+  // Simple CPI/FOMC detection: roughly mid-month
+  const day = parseInt(d.slice(8));
+  const month = d.slice(0,7);
+  const banner = document.getElementById('eventBanner');
+  const text = document.getElementById('eventText');
+  if(day >= 10 && day <= 12){
+    text.textContent = '可能为 CPI 发布日 ⚠️ 确认后数据前不开仓';
+    banner.classList.add('show');
+  } else if(day >= 16 && day <= 19){
+    text.textContent = '可能为 FOMC 周 ⚠️ 利率决议前后谨慎开仓';
+    banner.classList.add('show');
+  } else {
+    banner.classList.remove('show');
+  }
+}
+
+function showGateStep(step){
+  currentStep = step;
+  const steps = document.getElementById('steps');
+  steps.innerHTML = [0,1,2,3].map(i => {
+    let cls = '';
+    if(i < step) cls = 'done';
+    else if(i === step) cls = 'active';
+    return `<div class="step-dot ${cls}"></div>`;
+  }).join('');
+
+  let html = '';
+  const sub = document.getElementById('gateSub');
+
+  if(step === 0){
+    sub.textContent = '第 1 步：输入今日市场环境（可自动获取）';
+    html += `<button class="btn btn-outline" onclick="fetchMarketData()" id="btnFetch" style="margin-bottom:12px;width:100%">📡 自动获取行情（SPY/VIX/10Y）</button>`;
+    html += `<div class="field"><label>SPY 价格</label><input type="text" id="fSpy" placeholder="例: 748" value="${gateForm.spy}"></div>`;
+    html += `<div class="field"><label>VIX</label><input type="text" id="fVix" placeholder="例: 16.7" value="${gateForm.vix}"></div>`;
+    html += `<div class="field"><label>10Y 美债收益率 (%)</label><input type="text" id="fTenY" placeholder="例: 4.63" value="${gateForm.tenY}"></div>`;
+    html += `<div class="field"><label>今日事件</label><select id="fEvent"><option value="">无重大事件</option><option value="cpi">CPI 发布</option><option value="fomc">FOMC</option><option value="nfp">NFP</option><option value="earnings">重要财报</option></select></div>`;
+    html += `<button class="btn btn-primary" onclick="nextStep(0)">下一步 →</button>`;
+    html += `<div class="help" style="margin-top:8px;text-align:center">也可<a href="#" onclick="useDefaults()" style="color:var(--purple)">使用保守默认值</a></div>`;
+  } else if(step === 1){
+    sub.textContent = '第 2 步：选择标的 + 确认入场条件';
+    html += `<div class="field"><label>标的</label><select id="fSymbol"><option value="">-- 选择 --</option><option value="NVDA">NVDA 🥇 AI龙头</option><option value="SOXX">SOXX 🥈 半导体ETF</option><option value="DRAM">DRAM 🥈 存储ETF</option><option value="INTC">INTC 🥉 事件埋伏</option></select></div>`;
+    html += toggleRow('回调 ≥ 3%（距20日高）', 'fPullback', gateForm.pullback, '涨停之后必须回调才买');
+    html += toggleRow('IV Rank < 80', 'fIvRank', gateForm.ivRank, '80以上暂停该标的');
+    html += toggleRow('SPY 在 50 DMA 上方', 'fSpyDMA', gateForm.spy50DMA, '跌破降一级，不暂停');
+    html += toggleRow('10Y 单日波动 < 15bp', 'fTenYok', gateForm.tenYok, '≥15bp 不开新仓');
+    html += `<div class="btn-row" style="margin-top:12px"><button class="btn btn-outline" onclick="currentStep=0;renderGate();saveGateDraft()">← 上一步</button><button class="btn btn-primary" onclick="nextStep(1)">下一步 →</button></div>`;
+  } else if(step === 2){
+    sub.textContent = '第 3 步：确认风险参数';
+    html += `<div class="field"><label>仓位级别</label><select id="fSize"><option value="standard">🥉 标准出击 $400-600</option><option value="priority">🥈 重点出击 $700-1000</option><option value="full">🥇 全力一击 $1000-1500</option></select></div>`;
+    html += `<div class="field"><label>DTE（天数）</label><input type="number" id="fDte" value="${gateForm.dte}" min="1" max="60"></div>`;
+    html += `<div class="field"><label>止盈条件</label><input type="text" id="fTP" placeholder="例: +80% 出一半，+150% 全平" value="${gateForm.takeProfit}"></div>`;
+    html += `<div class="field"><label>止损条件</label><input type="text" id="fSL" placeholder="例: -80% 无条件全平" value="${gateForm.stopLoss}"></div>`;
+    html += `<div class="btn-row"><button class="btn btn-outline" onclick="currentStep=1;renderGate();saveGateDraft()">← 上一步</button><button class="btn btn-primary" onclick="nextStep(2)">下一步 →</button></div>`;
+  } else if(step === 3){
+    sub.textContent = '第 4 步：一句话理由 + 确认';
+    html += `<div class="field"><label>为什么做这笔交易？（必填）</label><textarea id="fReason" placeholder="例: NVDA 财报后回调 4%，IV crush 已完成，30 DTE Call 搏反弹">${gateForm.reason}</textarea></div>`;
+    html += `<div class="card-sub" style="background:var(--surface2);padding:10px;border-radius:var(--radius-sm);margin-bottom:12px">
+      <strong>📋 确认清单</strong><br>
+      标的：<span id="confirmSymbol">${gateForm.symbol||'未选'}</span> ·
+      仓位：<span id="confirmSize">${gateForm.size}</span> ·
+      DTE：<span id="confirmDte">${gateForm.dte}</span>
+    </div>`;
+    html += `<div class="btn-row"><button class="btn btn-outline" onclick="currentStep=2;renderGate();saveGateDraft()">← 上一步</button><button class="btn btn-primary" id="btnSubmit" onclick="submitGate()">✅ 确认 — 可以交易</button></div>`;
+  }
+  document.getElementById('gateContent').innerHTML = html;
+
+  // Restore field values
+  if(step===0){
+    document.getElementById('fEvent').value = gateForm.event;
+  }
+  if(step===1){
+    setTimeout(()=>{
+      const sel = document.getElementById('fSymbol');
+      if(sel) sel.value = gateForm.symbol;
+    },10);
+  }
+  if(step===2){
+    setTimeout(()=>{
+      const sz = document.getElementById('fSize');
+      if(sz) sz.value = gateForm.size;
+    },10);
+  }
+  if(step===3){
+    setTimeout(()=>{ updateConfirm(); },10);
+  }
+}
+
+function useDefaults(){
+  gateForm.spy = '745'; gateForm.vix = '18'; gateForm.tenY = '4.5'; gateForm.event = '';
+  currentStep = 0; renderGate();
+  showToast('已填入保守默认值');
+}
+async function fetchMarketData(){
+  const btn = document.getElementById('btnFetch');
+  btn.textContent = '⏳ 获取中...'; btn.disabled = true;
+  try{
+    const [spyRes, vixRes, tnxRes] = await Promise.all([
+      fetch('https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d&range=1d'),
+      fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=1d'),
+      fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5ETNX?interval=1d&range=1d')
+    ]);
+    const spy = await spyRes.json();
+    const vix = await vixRes.json();
+    const tnx = await tnxRes.json();
+    const spyPrice = spy.chart.result[0].meta.regularMarketPrice.toFixed(0);
+    const vixPrice = vix.chart.result[0].meta.regularMarketPrice.toFixed(1);
+    const tenY = tnx.chart.result[0].meta.regularMarketPrice.toFixed(2);
+    gateForm.spy = spyPrice; gateForm.vix = vixPrice; gateForm.tenY = tenY;
+    currentStep = 0; renderGate();
+    showToast(`✅ SPY ${spyPrice} · VIX ${vixPrice} · 10Y ${tenY}%`);
+    btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false;
+  }catch(e){
+    btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false;
+    showToast('⚠️ 获取失败，请手动输入或点「使用保守默认值」');
+  }
+}
+function toggleRow(label, id, val, hint){
+  return `<div class="toggle-row">
+    <span class="toggle-label">${label} <span class="toggle-hint">${hint}</span></span>
+    <div class="toggle" id="tog_${id}">
+      <button class="${val===true?'on':''}" onclick="setToggle('${id}',true)">✅</button>
+      <button class="${val===false?'off':''}" onclick="setToggle('${id}',false)">❌</button>
+    </div>
+  </div>`;
+}
+function setToggle(id,val){
+  const map = {fPullback:'pullback',fIvRank:'ivRank',fSpyDMA:'spy50DMA',fTenYok:'tenYok'};
+  gateForm[map[id]||id] = val;
+  renderGate();
+  saveGateDraft();
+}
+
+function saveGateDraft(){
+  // Save field values
+  const spyEl = document.getElementById('fSpy');
+  const vixEl = document.getElementById('fVix');
+  const tenYEl = document.getElementById('fTenY');
+  const eventEl = document.getElementById('fEvent');
+  if(spyEl) gateForm.spy = spyEl.value;
+  if(vixEl) gateForm.vix = vixEl.value;
+  if(tenYEl) gateForm.tenY = tenYEl.value;
+  if(eventEl) gateForm.event = eventEl.value;
+  const symEl = document.getElementById('fSymbol');
+  if(symEl) gateForm.symbol = symEl.value;
+  const sizeEl = document.getElementById('fSize');
+  if(sizeEl) gateForm.size = sizeEl.value;
+  const dteEl = document.getElementById('fDte');
+  if(dteEl) gateForm.dte = dteEl.value;
+  const tpEl = document.getElementById('fTP');
+  if(tpEl) gateForm.takeProfit = tpEl.value;
+  const slEl = document.getElementById('fSL');
+  if(slEl) gateForm.stopLoss = slEl.value;
+  const reasonEl = document.getElementById('fReason');
+  if(reasonEl) gateForm.reason = reasonEl.value;
+}
+
+function nextStep(fromStep){
+  saveGateDraft();
+  // Validate
+  if(fromStep === 0){
+    if(!gateForm.spy && !gateForm.vix){ showToast('至少填入 SPY 价格或用默认值'); return; }
+  }
+  if(fromStep === 1){
+    if(!gateForm.symbol){ showToast('请选择标的'); return; }
+    if(gateForm.pullback === null){ showToast('请确认回调条件'); return; }
+    if(gateForm.ivRank === null){ showToast('请确认 IV Rank 条件'); return; }
+    // Block CPI/FOMC days
+    if(gateForm.event === 'cpi' || gateForm.event === 'fomc'){
+      showToast('⚠️ 事件日禁止开新仓'); return;
+    }
+    if(!gateForm.pullback){ currentStep = 1; showNoGo('回调条件不满足——距20日高回调不足3%。等。'); return; }
+    if(gateForm.ivRank === false){ currentStep = 1; showNoGo('IV Rank ≥ 80——暂停该标的或降级。'); return; }
+  }
+  if(fromStep === 2){
+    // All clear
+    if(!gateForm.takeProfit) gateForm.takeProfit = '+80% 出一半，+150% 全平';
+    if(!gateForm.stopLoss) gateForm.stopLoss = '-80% 无条件全平';
+  }
+  if(fromStep === 3) return; // Submit handles this
+  currentStep = fromStep + 1;
+  renderGate();
+}
+
+function updateConfirm(){
+  document.getElementById('confirmSymbol').textContent = gateForm.symbol||'未选';
+  document.getElementById('confirmSize').textContent = gateForm.size;
+  document.getElementById('confirmDte').textContent = gateForm.dte;
+}
+
+function submitGate(){
+  saveGateDraft();
+  if(!gateForm.reason.trim()){ showToast('请填写交易理由'); return; }
+  const today = now();
+  const allPass = gateForm.pullback === true && gateForm.ivRank === true;
+
+  data.gates[today] = {
+    completed: true,
+    timestamp: new Date().toISOString(),
+    market: { spy: gateForm.spy, vix: gateForm.vix, event: gateForm.event, tenY: gateForm.tenY },
+    symbol: gateForm.symbol,
+    conditions: { pullback: gateForm.pullback, ivRank: gateForm.ivRank, spy50DMA: gateForm.spy50DMA, tenYok: gateForm.tenYok },
+    plan: { size: gateForm.size, dte: parseInt(gateForm.dte), takeProfit: gateForm.takeProfit, stopLoss: gateForm.stopLoss },
+    reason: gateForm.reason,
+    decision: 'trade'
+  };
+  // Create pending trade entry
+  data.trades.push({
+    id: Date.now(),
+    date: today,
+    symbol: gateForm.symbol,
+    strategy: 'longCall',
+    size: gateForm.size,
+    dte: parseInt(gateForm.dte),
+    entryPrice: null,
+    exitPrice: null,
+    result: null,
+    note: gateForm.reason,
+    gateId: today,
+    compliant: true,
+    status: 'pending'
+  });
+  save(data);
+  showGateResult(data.gates[today]);
+  showToast('✅ 决策门通过！去券商 App 执行吧。');
+}
+
+function showNoGo(reason){
+  const today = now();
+  data.gates[today] = {
+    completed: true,
+    timestamp: new Date().toISOString(),
+    decision: 'no-trade',
+    reason: reason
+  };
+  save(data);
+  let html = `<div class="result-banner no"><div class="big">🔴</div><div class="msg">今天不交易</div><div class="detail">${reason}</div></div>`;
+  html += `<button class="btn btn-outline btn-sm" onclick="resetGate()">重新检查</button>`;
+  document.getElementById('gateContent').innerHTML = html;
+  document.getElementById('gateSub').textContent = '决策已完成';
+}
+
+function showGateResult(g){
+  let cls = g.decision==='trade'?'go':(g.decision==='no-trade'?'no':'wait');
+  let emoji = g.decision==='trade'?'🟢':(g.decision==='no-trade'?'🔴':'🟡');
+  let msg = g.decision==='trade'?'可以交易':(g.decision==='no-trade'?'今天不交易':'等待');
+  let detail = g.decision==='trade'?
+    `${g.symbol} · ${g.plan?.size||''} · ${g.plan?.dte||''} DTE · ${g.reason?.slice(0,40)||''}` :
+    (g.reason||'');
+
+  let html = `<div class="result-banner ${cls}"><div class="big">${emoji}</div><div class="msg">${msg}</div><div class="detail">${detail}</div></div>`;
+  html += `<button class="btn btn-outline btn-sm" onclick="resetGate()">重新检查</button>`;
+  document.getElementById('gateContent').innerHTML = html;
+  document.getElementById('gateSub').textContent = '今日已完成 ✓';
+}
+
+function resetGate(){
+  currentStep = 0;
+  gateForm = { spy:'', vix:'', event:'', tenY:'', symbol:'', pullback:null, ivRank:null, spy50DMA:null, tenYok:null, size:'standard', dte:'30', stopLoss:'', takeProfit:'', reason:'' };
+  renderGate();
+}
+
+// ═══════════════════════════════════
+// TRADE LOG
+// ═══════════════════════════════════
+function renderLog(){
+  const trades = data.trades.filter(t => t.status !== 'deleted').reverse();
+  const container = document.getElementById('logList');
+  if(trades.length === 0){
+    container.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;font-size:.85rem">还没有交易记录。<br>完成决策门后自动创建。</div>';
+    return;
+  }
+  let html = '';
+  trades.forEach(t => {
+    const cls = t.compliant ? 'compliant' : 'violated';
+    const resCls = t.result > 0 ? 'win' : (t.result < 0 ? 'loss' : '');
+    const resStr = t.result !== null ? (t.result > 0 ? '+$'+t.result : '-$'+Math.abs(t.result)) : '持仓中';
+    const flag = t.gateId ? '' : ' 🚩';
+    html += `<div class="trade-item ${cls}">
+      <div class="trade-row-top">
+        <span class="trade-symbol">${t.symbol}${flag}</span>
+        <span class="trade-result ${resCls}">${resStr}</span>
+      </div>
+      <div class="trade-row-mid">${t.date} · ${t.strategy} · ${t.size||''} · ${t.dte||''}DTE</div>
+      <div class="trade-row-bot">
+        <span>${t.note?.slice(0,50)||''}</span>
+        <span>${t.compliant?'✅ 合规':'🚩 未走决策门'}</span>
+      </div>
+      ${t.status === 'pending' ? `
+      <div class="btn-row" style="margin-top:8px">
+        <input type="number" id="res_${t.id}" placeholder="盈亏 $" style="flex:1;font-size:.8rem;padding:6px 10px">
+        <button class="btn btn-sm btn-primary" onclick="closeTrade(${t.id})" style="width:auto">平仓</button>
+      </div>` : ''}
+    </div>`;
+  });
+  container.innerHTML = html;
+}
+
+function closeTrade(id){
+  const resEl = document.getElementById('res_'+id);
+  const result = parseFloat(resEl?.value);
+  if(isNaN(result)){ showToast('请输入盈亏金额'); return; }
+  const t = data.trades.find(x => x.id === id);
+  if(!t) return;
+  t.result = result;
+  t.status = 'closed';
+  t.exitDate = now();
+  save(data);
+  renderLog();
+  showToast(result > 0 ? '💰 盈利记录已保存' : '📉 亏损记录已保存');
+}
+
+// ═══════════════════════════════════
+// QUIZ ENGINE
+// ═══════════════════════════════════
+const QUIZ_POOL = [
+  { id:'q01', cat:'volatility', type:'概念题', q:'IV Crush 通常在什么时候发生？', opts:['财报发布前','重大事件（财报/FOMC/CPI）落地后','VIX 上涨时','股价大涨时'], ans:1, src:'期权入门指南', exp:'重大事件后不确定性消除，隐含波动率（IV）会迅速下降。这就是为什么事件前买期权很贵——你付了高 IV 的价格。' },
+  { id:'q02', cat:'basics', type:'概念题', q:'裸买 Call 的最大亏损是多少？', opts:['无限','买入时支付的权力金','行权价 × 100','0'], ans:1, src:'期权入门指南', exp:'买 Call 的权利和义务不对称：你只有权利买入，没有义务。所以最大亏损就是买入时付的钱。' },
+  { id:'q03', cat:'strategy', type:'场景题', q:'CPI 数据发布前 2 小时，SPY 748，IV Rank 85。你应该？', opts:['趁 IV 高卖 Put Credit Spread','买 Call 赌数据利好','等待数据落地后再评估','买 Put 对冲'], ans:2, src:'宏观事件交易规则', exp:'事件前 IV 极高，买期权很贵。数据方向不确定。正确做法：等数据落地 + IV crush 完成 + 趋势确认后再入场。' },
+  { id:'q04', cat:'rules', type:'概念题', q:'你的入场框架要求标的距 20 日高回调多少才能入场？', opts:['≥ 1%','≥ 3%','≥ 5%','≥ 10%'], ans:1, src:'期权操盘计划', exp:'回调 ≥ 3% 是硬条件。不满足 = 不开仓。只做大跌反弹，不追高。' },
+  { id:'q05', cat:'rules', type:'决策题', q:'NVDA 距 20 日高回调 4%，IV Rank 45，SPY 在 50 DMA 上方，10Y 波动 5bp。能否入场？', opts:['能 — 所有条件满足','不能 — IV Rank 太低','不能 — 回调不够','不能 — SPY 位置不对'], ans:0, src:'期权操盘计划', exp:'四个条件全部满足：回调≥3%✅ IV Rank 45<80✅ SPY在50DMA上✅ 10Y波动5bp<15bp✅。这是标准出击信号。' },
+  { id:'q06', cat:'rules', type:'概念题', q:'0DTE 期权在你的框架里属于什么？', opts:['高风险高回报策略','事件驱动策略','永远禁止 — 这是赌博','仅在 CPI 日可用'], ans:2, src:'期权操盘计划', exp:'0DTE 在你的禁止清单里——"发现一次，当周停止交易"。这不是策略，是赌博。' },
+  { id:'q07', cat:'strategy', type:'场景题', q:'你持仓 2 张 NVDA Call，现在 +80%。按路线 A，你应该？', opts:['全平落袋','卖一半锁利，剩下一半设保本止损','继续持有等 +200%','加仓'], ans:1, src:'期权操盘计划', exp:'路线 A（≥2 张）：+80% 卖一半锁利，剩下一半设保本止损。这样既锁定了利润，又保留了暴击的可能。' },
+  { id:'q08', cat:'strategy', type:'场景题', q:'你持仓 1 张 SOXX Call，现在 +80%。按路线 B，你应该？', opts:['立即全平','不卖但止损收紧到保本线','加仓 1 张','什么都不做'], ans:1, src:'期权操盘计划', exp:'路线 B（1 张）：+80% 不卖，但止损从 -80% 收紧到保本线。锁住利润，不让盈利变亏损。' },
+  { id:'q09', cat:'risk', type:'概念题', q:'在你的三池弹药系统中，"战略储备金"什么时候能动用？', opts:['任何时候感觉机会来了','期权账户回撤>50%、黑天鹅、重大催化剂','每个月固定释放','从不 — 永远锁仓'], ans:1, src:'期权操盘计划', exp:'储备金有严格的触发条件。不是感觉来了就能用——这是你和自己的契约。' },
+  { id:'q10', cat:'basics', type:'概念题', q:'希腊字母 Delta 代表什么？', opts:['时间衰减速度','波动率敏感度','期权价格对标的股价的敏感度','利率敏感度'], ans:2, src:'期权入门指南', exp:'Delta = 标的股价变动 $1，期权价格变动多少。ATM 约 0.5，深度 ITM 接近 1.0。' },
+  { id:'q11', cat:'volatility', type:'概念题', q:'"IV Rank 80" 是什么意思？', opts:['IV 在过去一年的分布中处于第 80 百分位','波动率是 80%','比昨天高 80%','80% 的交易者有 IV'], ans:0, src:'期权入门指南', exp:'IV Rank = 当前 IV 在过去一年 IV 分布中的位置。80 意味着当前 IV 比过去一年 80% 的时间都高——期权"贵"。' },
+  { id:'q12', cat:'rules', type:'决策题', q:'你的账户里同时持有 NVDA、SOXX、DRAM、INTC 各一张 Call。看到 SOXX 回调 4%，想加仓。可以吗？', opts:['可以 — 回调到位了','不可以 — 同时持仓已达 4 笔上限，先平一笔再开新仓','可以 — SOXX 是主力标的','不可以 — 应该等 INTC 平了再说'], ans:1, src:'期权操盘计划', exp:'同时持仓 ≤ 4 笔是硬上限。你还想开新仓？先平一笔释放兵力。' },
+  { id:'q13', cat:'risk', type:'场景题', q:'你连续亏损了 4 笔标准出击。按框架，应该怎么办？', opts:['加大仓位翻本','暂停 3 天，只观察不开仓','换标的继续','无所谓，继续正常交易'], ans:1, src:'期权操盘计划', exp:'连续亏 4 笔 → 暂停 3 天。这不是惩罚，是给大脑冷却的时间。连续亏损时判断力下降是最危险的。' },
+  { id:'q14', cat:'strategy', type:'概念题', q:'Credit Spread 和裸卖 Put 的核心区别是什么？', opts:['没有区别','Credit Spread 有买入保护腿，最大亏损有限','Credit Spread 收益更高','裸卖 Put 更安全'], ans:1, src:'Credit-Debit-Spread-学习地图', exp:'Credit Spread = Sell + Buy 两条腿，买入腿限定了最大亏损。裸卖 Put 理论上可以亏到零。' },
+  { id:'q15', cat:'rules', type:'决策题', q:'今天是 FOMC 决议日。早上你看到 DRAM 回调了 5%（跌得很漂亮）。你应该？', opts:['趁回调买入 Call — 跌到位了','等 FOMC 落地 + 趋势确认后再入场','买 Put 对冲','先买一半，剩下的等 FOMC'], ans:1, src:'宏观事件交易规则', exp:'事件日禁止开新仓——回调再漂亮也不行。等事件落地、IV crush 完成、趋势确认后再入场。"晚做巧做"。' },
+  { id:'q16', cat:'volatility', type:'概念题', q:'财报前 IV 飙升，此时买 Call 的缺点是什么？', opts:['没有缺点','买得贵 — IV crush 后即使方向对了也可能亏钱','不能买','只有优点'], ans:1, src:'期权入门指南', exp:'财报前 IV 极高 → 你买的 Call 含大量"时间溢价"。财报后 IV crush → 即使股价涨了，IV 暴跌可能吃掉你的方向性收益。' },
+  { id:'q17', cat:'risk', type:'概念题', q:'PDT 规则要求账户低于 $25,000 时，5 天内最多几次日内交易？', opts:['无限','3 次','5 次','1 次'], ans:1, src:'个人量化决策系统', exp:'PDT = Pattern Day Trader。账户 < $25,000 时，5 个交易日 ≤ 3 次日内交易。超过会被限制。' },
+  { id:'q18', cat:'strategy', type:'场景题', q:'一笔 SOXX Call 从 +150% 回撤到 +80%。你的移动止盈触发了吗？', opts:['触发了 — 应该在回撤 25% 时平仓','没有 — 还没到 -80% 止损','应该加仓','不管，继续等'], ans:0, src:'期权操盘计划', exp:'路线 B：+150% 设移动止盈（从最高点回落 -25% 就平仓）。从 +150% 到 +80%，回撤了 70 个百分点，远超 25% 触发线。应该已经平仓了。' },
+  { id:'q19', cat:'basics', type:'概念题', q:'Theta 是什么？', opts:['股价变动对期权价格的影响','波动率对期权价格的影响','时间流逝对期权价格的侵蚀','利率对期权价格的影响'], ans:2, src:'期权入门指南', exp:'Theta = 时间损耗。每天期权都会因为时间流逝而贬值。临近到期时 Theta 加速——这就是为什么不要持有到到期最后一周。' },
+  { id:'q20', cat:'risk', type:'概念题', q:'你的三池系统中，"长期锚"（池三）买的是什么？', opts:['NVDA 个股','SOXX ETF — 买了就不卖','SPY ETF','美国国债'], ans:1, src:'期权操盘计划', exp:'池三 = $500/月买 SOXX，买了就不卖。不是赚钱工具，是心理锚。期权跌 40% 时看一眼——它还在。让你敢睡。' },
+];
+
+function getTodayQuestions(){
+  const today = now();
+  if(data.quiz.daily[today] && data.quiz.daily[today].length > 0){
+    return data.quiz.daily[today];
+  }
+  // Pick 3 questions: prioritize due reviews, then random
+  const due = QUIZ_POOL.filter(q => {
+    const ans = data.quiz.answers[q.id];
+    if(!ans) return true; // Never answered
+    if(data.quiz.mastered.includes(q.id)) return false;
+    const lastDate = ans.history[ans.history.length-1]?.date;
+    if(!lastDate) return true;
+    const last = new Date(lastDate);
+    const next = new Date(last);
+    next.setDate(next.getDate() + (ans.streak >= 3 ? 7 : (ans.streak >= 1 ? 3 : 1)));
+    return new Date() >= next;
+  });
+  const picked = [];
+  const pool = due.length >= 3 ? due : [...QUIZ_POOL].sort(()=>Math.random()-.5);
+  for(let i=0;i<Math.min(3,pool.length);i++) picked.push(pool[i].id);
+  data.quiz.daily[today] = picked;
+  save(data);
+  return picked;
+}
+
+function renderLearn(){
+  const today = now();
+  const qids = getTodayQuestions();
+  const questions = qids.map(id => QUIZ_POOL.find(q => q.id === id)).filter(Boolean);
+
+  let done = 0;
+  questions.forEach(q => { if(data.quiz.answers[q.id]?.history?.some(h=>h.date===today)) done++; });
+  document.getElementById('quizToday').textContent = done;
+  document.getElementById('quizTotal').textContent = questions.length;
+  document.getElementById('quizStreak').textContent = data.quiz.streak || 0;
+
+  let html = '';
+  questions.forEach((q, i) => {
+    const ans = data.quiz.answers[q.id];
+    const answeredToday = ans?.history?.some(h => h.date === today);
+    html += `<div class="quiz-card">
+      <div class="quiz-type">${q.type} · ${q.cat}</div>
+      <div class="quiz-question">${i+1}. ${q.q}</div>`;
+    if(answeredToday){
+      const last = ans.history[ans.history.length-1];
+      html += `<ul class="quiz-options">`;
+      q.opts.forEach((o, j) => {
+        let cls = '';
+        if(j === q.ans) cls = 'correct';
+        else if(j === last.chosen && j !== q.ans) cls = 'wrong';
+        html += `<li class="${cls}">${o} ${j===q.ans?'✓':''} ${j===last.chosen&&j!==q.ans?'✗':''}</li>`;
+      });
+      html += `</ul>`;
+      html += `<div class="quiz-feedback show ${last.chosen===q.ans?'good':'bad'}">${q.exp}</div>`;
+      html += `<div class="quiz-source">📖 来源：${q.src}</div>`;
+    } else {
+      html += `<ul class="quiz-options" id="quizOpts_${q.id}">`;
+      q.opts.forEach((o, j) => {
+        html += `<li onclick="answerQuiz('${q.id}',${j})">${o}</li>`;
+      });
+      html += `</ul>`;
+    }
+    html += `</div>`;
+  });
+  document.getElementById('quizContent').innerHTML = html || '<div style="text-align:center;color:var(--muted);padding:20px">🎉 今天没有需要复习的题目！</div>';
+}
+
+function answerQuiz(qid, chosen){
+  const q = QUIZ_POOL.find(x => x.id === qid);
+  if(!q) return;
+  const today = now();
+  const correct = chosen === q.ans;
+
+  if(!data.quiz.answers[qid]) data.quiz.answers[qid] = { history:[], streak:0 };
+  const ans = data.quiz.answers[qid];
+  ans.history.push({ date: today, chosen, correct });
+  if(correct){
+    ans.streak = (ans.streak||0) + 1;
+    if(ans.streak >= 3 && !data.quiz.mastered.includes(qid)) data.quiz.mastered.push(qid);
+    data.quiz.streak = (data.quiz.streak||0) + 1;
+    if(data.quiz.streak > (data.quiz.maxStreak||0)) data.quiz.maxStreak = data.quiz.streak;
+  } else {
+    ans.streak = 0;
+    data.quiz.streak = 0;
+    if(data.quiz.mastered.includes(qid)) data.quiz.mastered = data.quiz.mastered.filter(x=>x!==qid);
+  }
+  save(data);
+  renderLearn();
+}
+
+// ═══════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════
+function renderDash(){
+  const trades = data.trades.filter(t => t.status === 'closed');
+  const compliant = trades.filter(t => t.compliant);
+  const violated = trades.filter(t => !t.compliant);
+  const gateDays = Object.keys(data.gates).filter(k => data.gates[k].completed);
+  const blocks = Object.values(data.gates).filter(g => g.decision === 'no-trade');
+
+  const gateRate = trades.length > 0 ? Math.round(compliant.length/trades.length*100) : 0;
+  const compWins = compliant.filter(t => t.result > 0);
+  const compWinRate = compliant.length > 0 ? Math.round(compWins.length/compliant.length*100) : 0;
+  const vioWins = violated.filter(t => t.result > 0);
+  const vioWinRate = violated.length > 0 ? Math.round(vioWins.length/violated.length*100) : 0;
+  const compTotal = compliant.reduce((s,t)=>s+(t.result||0),0);
+  const vioTotal = violated.reduce((s,t)=>s+(t.result||0),0);
+
+  // Trust score: based on gate usage, win rate differential, and blocking
+  let trustScore = 50;
+  if(trades.length >= 3){
+    trustScore += Math.min(25, gateRate * 0.25);
+    if(compWinRate > vioWinRate) trustScore += Math.min(15, (compWinRate - vioWinRate) * 0.5);
+    trustScore += Math.min(10, blocks.length * 3);
+  }
+
+  document.getElementById('trustScore').textContent = Math.round(Math.min(100, trustScore));
+  document.getElementById('trustTrend').textContent = trustScore > 60 ? '↗ 系统在帮你' : '— 样本不足';
+  document.getElementById('trustTrend').className = 'trend ' + (trustScore > 60 ? 'up' : '');
+
+  document.getElementById('dGateRate').textContent = trades.length >= 3 ? gateRate+'%' : '--';
+  document.getElementById('dCompWin').textContent = compliant.length >= 3 ? compWinRate+'%' : '--';
+  document.getElementById('dVioWin').textContent = violated.length >= 1 ? vioWinRate+'%' : '--';
+  document.getElementById('dBlock').textContent = blocks.length || '--';
+
+  let insight = '';
+  if(trades.length < 3){
+    insight = '📌 数据还不够。至少做 5 笔合规交易后，信任看板才会有意义的信号。';
+  } else if(compWinRate > vioWinRate && compliant.length >= 3){
+    insight = `<strong>✅ 系统正在帮你。</strong> 合规交易胜率（${compWinRate}%）高于违规交易（${vioWinRate}%）。每走一次决策门，你的预期收益都在提高。`;
+  } else if(compliant.length >= 3){
+    insight = `📊 样本还在积累。合规 ${compliant.length} 笔（胜率 ${compWinRate}%），违规 ${violated.length} 笔（胜率 ${vioWinRate}%）。继续按系统走。`;
+  } else {
+    insight = '🔍 多走几次决策门，让数据告诉你系统有没有用。';
+  }
+  document.getElementById('dInsight').innerHTML = insight;
+
+  // Learning stats
+  const totalAns = Object.values(data.quiz.answers).reduce((s,a)=>s+a.history.length,0);
+  const correctAns = Object.values(data.quiz.answers).reduce((s,a)=>s+a.history.filter(h=>h.correct).length,0);
+  const correctRate = totalAns > 0 ? Math.round(correctAns/totalAns*100) : 0;
+
+  document.getElementById('dQTotal').textContent = totalAns || '--';
+  document.getElementById('dQCorrect').textContent = totalAns > 0 ? correctRate+'%' : '--';
+  document.getElementById('dQStreak').textContent = data.quiz.maxStreak || '--';
+  document.getElementById('dQMastered').textContent = data.quiz.mastered.length || '--';
+
+  let learnInsight = '';
+  if(data.quiz.mastered.length >= 3){
+    learnInsight = `<strong>📚 ${data.quiz.mastered.length}</strong> 个知识点已掌握。继续保持每天 3 题的习惯。`;
+  } else if(totalAns > 0){
+    learnInsight = `📖 已答 ${totalAns} 题，正确率 ${correctRate}%。每天 2 分钟，积少成多。`;
+  } else {
+    learnInsight = '🎯 去"学习"Tab 做今天的 3 道题吧。';
+  }
+  document.getElementById('dLearnInsight').innerHTML = learnInsight;
+}
+
+// ═══════════════════════════════════
+// UTILS
+// ═══════════════════════════════════
+function checkUpdate(){
+  if(navigator.onLine){
+    location.reload(true);
+  } else {
+    showToast('📡 无网络，无法检查更新');
+  }
+}
+
+function exportData(){
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '决策系统数据_' + now() + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('📤 导出完成 → 存到 Obsidian Vault/02-股票/');
+}
+
+function importData(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    try{
+      const d = JSON.parse(ev.target.result);
+      if(d.gates && d.trades && d.quiz){
+        data = d;
+        save(data);
+        renderGate();
+        renderDash();
+        showToast('📥 数据已导入 ' + Object.keys(data.gates).length + ' 天决策 + ' + data.trades.length + ' 笔交易');
+      } else {
+        showToast('⚠️ 文件格式不对');
+      }
+    }catch(ex){
+      showToast('⚠️ 文件解析失败');
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2000);
+}
+
+// ═══════════════════════════════════
+// INIT
+// ═══════════════════════════════════
+renderGate();
+renderDash();
+
+// Service Worker
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/decision-gate/sw.js');
+}
+</script>
+</body>
+</html>

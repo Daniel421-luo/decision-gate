@@ -426,8 +426,10 @@ function showGateStep(step){
     const hasKey = localStorage.getItem('finnhub_key') || localStorage.getItem('twelvedata_key');
     html += `<button class="btn btn-outline" onclick="fetchMarketData()" id="btnFetch" style="margin-bottom:12px;width:100%">📡 自动获取行情（SPY/VIX/10Y）${hasKey?'':' — 需先设置 ⚙️'}</button>`;
     html += `<div class="field"><label>SPY 价格</label><input type="text" id="fSpy" placeholder="例: 748" value="${gateForm.spy}"></div>`;
-    html += `<div class="field"><label>VIX</label><input type="text" id="fVix" placeholder="例: 16.7" value="${gateForm.vix}"></div>`;
-    html += `<div class="field"><label>10Y 美债收益率 (%)</label><input type="text" id="fTenY" placeholder="例: 4.63" value="${gateForm.tenY}"></div>`;
+    const vixLabel = gateForm._vixIsReal ? 'VIX' : 'VXX（VIX 替代 ETF）';
+    const tenYLabel = gateForm._tnxIsReal ? '10Y 美债收益率 (%)' : 'IEF（10Y 替代 ETF）';
+    html += `<div class="field"><label>${vixLabel}</label><input type="text" id="fVix" placeholder="例: 16.7" value="${gateForm.vix}"></div>`;
+    html += `<div class="field"><label>${tenYLabel}</label><input type="text" id="fTenY" placeholder="例: 4.63" value="${gateForm.tenY}"></div>`;
     html += `<div class="field"><label>今日事件</label><select id="fEvent"><option value="">无重大事件</option><option value="cpi">CPI 发布</option><option value="fomc">FOMC</option><option value="nfp">NFP</option><option value="earnings">重要财报</option></select></div>`;
     html += `<button class="btn btn-primary" onclick="nextStep(0)">下一步 →</button>`;
     html += `<div class="help" style="margin-top:8px;text-align:center">也可<a href="#" onclick="useDefaults()" style="color:var(--purple)">使用保守默认值</a></div>`;
@@ -514,11 +516,20 @@ async function fetchMarketData(){
   if(fKey){
     try{
       const spy = await fh('SPY');
-      let vix=null, tnx=null, vixErr='', tnxErr='';
-      try{ vix = await fh('%5EVIX'); }catch(e){ vixErr = e.message; errors.push('VIX: '+e.message); }
-      try{ tnx = await fh('%5ETNX'); }catch(e){ tnxErr = e.message; errors.push('10Y: '+e.message); }
-      const missing = (vix===null?1:0)+(tnx===null?1:0);
-      results.push({src:'Finnhub', spy, vix:vix||0, tnx:tnx||0, partial: missing>0, missingVix:!vix, missingTnx:!tnx});
+
+      // VIX: try real ^VIX first, fall back to VXX ETF
+      let vix=null, vixFrom='';
+      try{ vix=await fh('%5EVIX'); vixFrom='VIX'; }catch(e){
+        try{ vix=await fh('VXX'); vixFrom='VXX'; }catch(e2){ errors.push('VIX/VXX: '+e2.message); }
+      }
+
+      // TNX: try real ^TNX first, fall back to IEF ETF
+      let tnx=null, tnxFrom='';
+      try{ tnx=await fh('%5ETNX'); tnxFrom='TNX'; }catch(e){
+        try{ tnx=await fh('IEF'); tnxFrom='IEF'; }catch(e2){ errors.push('TNX/IEF: '+e2.message); }
+      }
+
+      results.push({src:'Finnhub', spy, vix:vix||0, tnx:tnx||0, vixFrom, tnxFrom});
     }catch(e){ errors.push('Finnhub SPY: '+e.message); }
   }
 
@@ -526,10 +537,14 @@ async function fetchMarketData(){
   if(tKey){
     try{
       const spy = await td('SPY');
-      let vix=null, tnx=null;
-      try{ vix = await td('VIX'); }catch(e){ errors.push('VIX: '+e.message); }
-      try{ tnx = await td('TNX'); }catch(e){ errors.push('10Y: '+e.message); }
-      results.push({src:'TwelveData', spy, vix:vix||0, tnx:tnx||0, partial: (vix===null||tnx===null)});
+      let vix=null, tnx=null, vixFrom='', tnxFrom='';
+      try{ vix=await td('VIX'); vixFrom='VIX'; }catch(e){
+        try{ vix=await td('VXX'); vixFrom='VXX'; }catch(e2){ errors.push('VIX/VXX: '+e2.message); }
+      }
+      try{ tnx=await td('TNX'); tnxFrom='TNX'; }catch(e){
+        try{ tnx=await td('IEF'); tnxFrom='IEF'; }catch(e2){ errors.push('TNX/IEF: '+e2.message); }
+      }
+      results.push({src:'TwelveData', spy, vix:vix||0, tnx:tnx||0, vixFrom, tnxFrom});
     }catch(e){ errors.push('TwelveData SPY: '+e.message); }
   }
 
@@ -541,13 +556,21 @@ async function fetchMarketData(){
 
   const primary = results[0];
   gateForm.spy = primary.spy.toFixed(0);
-  gateForm.vix = primary.vix ? primary.vix.toFixed(1) : '';
-  gateForm.tenY = primary.tnx ? primary.tnx.toFixed(2) : '';
+  const vixIsReal = primary.vixFrom === 'VIX';
+  const tnxIsReal = primary.tnxFrom === 'TNX';
+  gateForm.vix = primary.vix ? (vixIsReal ? primary.vix.toFixed(1) : '$'+primary.vix.toFixed(2)) : '';
+  gateForm.tenY = primary.tnx ? (tnxIsReal ? primary.tnx.toFixed(2) : '$'+primary.tnx.toFixed(2)) : '';
+  gateForm._vixIsReal = vixIsReal;
+  gateForm._tnxIsReal = tnxIsReal;
   currentStep = 0; renderGate();
 
   let msg = '✅ SPY ' + gateForm.spy;
-  if(gateForm.vix) msg += ' · VIX ' + gateForm.vix;
-  if(gateForm.tenY) msg += ' · 10Y ' + gateForm.tenY + '%';
+  if(gateForm.vix){
+    msg += vixIsReal ? ' · VIX ' + gateForm.vix : ' · VXX ' + gateForm.vix;
+  }
+  if(gateForm.tenY){
+    msg += tnxIsReal ? ' · 10Y ' + gateForm.tenY + '%' : ' · IEF ' + gateForm.tenY;
+  }
 
   if(results.length >= 2){
     const spyDiff = Math.abs(results[0].spy - results[1].spy);

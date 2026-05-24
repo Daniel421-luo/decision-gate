@@ -504,68 +504,65 @@ async function fetchMarketData(){
   if(btn){ btn.textContent = '⏳ 获取中...'; btn.disabled = true; }
 
   let results = [], errors = [];
+
+  // Helper: fetch single symbol from Finnhub
+  async function fh(sym){ const r=await fetchWithRetry('https://finnhub.io/api/v1/quote?symbol='+sym+'&token='+fKey); if(!r) throw new Error('timeout'); const d=await r.json(); if(d.error) throw new Error(d.error); return d.c; }
+  // Helper: fetch single symbol from Twelve Data
+  async function td(sym){ const r=await fetchWithRetry('https://api.twelvedata.com/price?symbol='+sym+'&apikey='+tKey); if(!r) throw new Error('timeout'); const d=await r.json(); if(d.code) throw new Error(d.message); return parseFloat(d.price); }
+
   // Source 1: Finnhub
   if(fKey){
     try{
-      const res = await fetchWithRetry('https://finnhub.io/api/v1/quote?symbol=SPY&token='+fKey);
-      if(!res) throw new Error('网络超时');
-      const spy = await res.json();
-      if(spy.error) throw new Error(spy.error);
-      const [vixRes,tnxRes] = await Promise.all([
-        fetchWithRetry('https://finnhub.io/api/v1/quote?symbol=^VIX&token='+fKey),
-        fetchWithRetry('https://finnhub.io/api/v1/quote?symbol=^TNX&token='+fKey)
-      ]);
-      const vix = vixRes ? await vixRes.json() : {};
-      const tnx = tnxRes ? await tnxRes.json() : {};
-      if(!vix.error && !tnx.error){
-        results.push({src:'Finnhub', spy:spy.c, vix:vix.c, tnx:tnx.c});
+      const spy = await fh('SPY');
+      let vix=null, tnx=null;
+      try{ vix = await fh('%5EVIX'); }catch(e){ errors.push('Finnhub VIX: '+e.message); }
+      try{ tnx = await fh('%5ETNX'); }catch(e){ errors.push('Finnhub TNX: '+e.message); }
+      if(vix!==null && tnx!==null){
+        results.push({src:'Finnhub', spy, vix, tnx});
+      } else if(vix!==null || tnx!==null){
+        results.push({src:'Finnhub', spy, vix:vix||0, tnx:tnx||0, partial:true});
       }
     }catch(e){ errors.push('Finnhub: '+e.message); }
   }
+
   // Source 2: Twelve Data
   if(tKey){
     try{
-      const res = await fetchWithRetry('https://api.twelvedata.com/price?symbol=SPY&apikey='+tKey);
-      if(!res) throw new Error('网络超时');
-      const spy = await res.json();
-      if(spy.code) throw new Error(spy.message||'Key无效');
-      const [vixRes,tnxRes] = await Promise.all([
-        fetchWithRetry('https://api.twelvedata.com/price?symbol=VIX&apikey='+tKey),
-        fetchWithRetry('https://api.twelvedata.com/price?symbol=TNX&apikey='+tKey)
-      ]);
-      const vix = vixRes ? await vixRes.json() : {};
-      const tnx = tnxRes ? await tnxRes.json() : {};
-      if(!vix.code && !tnx.code){
-        results.push({src:'TwelveData', spy:parseFloat(spy.price), vix:parseFloat(vix.price), tnx:parseFloat(tnx.price)});
+      const spy = await td('SPY');
+      let vix=null, tnx=null;
+      try{ vix = await td('VIX'); }catch(e){ errors.push('TwelveData VIX: '+e.message); }
+      try{ tnx = await td('TNX'); }catch(e){ errors.push('TwelveData TNX: '+e.message); }
+      if(vix!==null && tnx!==null){
+        results.push({src:'TwelveData', spy, vix, tnx});
+      } else if(vix!==null || tnx!==null){
+        results.push({src:'TwelveData', spy, vix:vix||0, tnx:tnx||0, partial:true});
       }
     }catch(e){ errors.push('TwelveData: '+e.message); }
   }
 
   if(results.length === 0){
-    if(btn){ btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false; }
+    if(btn){ btn.textContent = '📡 重试'; btn.disabled = false; }
     showToast('⚠️ 获取失败: ' + (errors.join('; ') || '未知错误'));
     return;
   }
 
-  // Cross-validate
   const primary = results[0];
   gateForm.spy = primary.spy.toFixed(0);
-  gateForm.vix = primary.vix.toFixed(1);
-  gateForm.tenY = primary.tnx.toFixed(2);
+  gateForm.vix = primary.vix ? primary.vix.toFixed(1) : '';
+  gateForm.tenY = primary.tnx ? primary.tnx.toFixed(2) : '';
   currentStep = 0; renderGate();
 
-  let msg = '✅ SPY ' + gateForm.spy + ' · VIX ' + gateForm.vix + ' · 10Y ' + gateForm.tenY + '%';
+  let msg = '✅ SPY ' + gateForm.spy;
+  if(gateForm.vix) msg += ' · VIX ' + gateForm.vix;
+  if(gateForm.tenY) msg += ' · 10Y ' + gateForm.tenY + '%';
+
   if(results.length >= 2){
     const spyDiff = Math.abs(results[0].spy - results[1].spy);
     const pctDiff = (spyDiff / results[0].spy * 100).toFixed(2);
-    if(pctDiff > 2){
-      msg += ' ⚠️ 两源差' + pctDiff + '% 请核实';
-    } else {
-      msg += ' ✓ 交叉验证通过';
-    }
+    msg += pctDiff > 2 ? ' ⚠️ 两源差'+pctDiff+'%' : ' ✓ 验证通过';
   }
   msg += ' [' + results.map(r=>r.src).join('+') + ']';
-  if(errors.length>0) msg += ' (1源失败)';
+  if(results[0].partial) msg += ' (部分字段缺失)';
   showToast(msg);
   if(btn){ btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false; }
 }

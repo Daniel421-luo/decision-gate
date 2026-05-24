@@ -444,7 +444,7 @@ function showGateStep(step){
   } else if(step === 1){
     sub.textContent = '第 2 步：选择标的 + 确认入场条件';
     html += `<div class="field"><label>标的</label><select id="fSymbol"><option value="">-- 选择 --</option><option value="NVDA">NVDA 🥇 AI龙头</option><option value="SOXX">SOXX 🥈 半导体ETF</option><option value="DRAM">DRAM 🥈 存储ETF</option><option value="INTC">INTC 🥉 事件埋伏</option></select></div>`;
-    html += toggleRow('回调 ≥ 3%（距20日高）', 'fPullback', gateForm.pullback, '涨停之后必须回调才买');
+    html += toggleRow('回调 ≥ 8%（距20日高）', 'fPullback', gateForm.pullback, '涨停之后必须回调才买');
     html += `<div class="field"><label>IV Rank</label><select id="fIvRank"><option value="">-- 选择 --</option><option value="low">🟢 < 50（正常出击）</option><option value="mid">🟡 50-80（降一级）</option><option value="high">🔴 > 80（暂停该标的）</option></select></div>`;
     html += toggleRow('SPY 在 50 DMA 上方', 'fSpyDMA', gateForm.spy50DMA, '跌破降一级，不暂停');
     html += toggleRow('10Y 单日波动 < 15bp (0.15%)', 'fTenYok', gateForm.tenYok, '≥15bp=利率恐慌重定价，当日不开仓');
@@ -458,7 +458,7 @@ function showGateStep(step){
     html += `<div class="btn-row"><button class="btn btn-outline" onclick="currentStep=1;renderGate();saveGateDraft()">← 上一步</button><button class="btn btn-primary" onclick="nextStep(2)">下一步 →</button></div>`;
   } else if(step === 3){
     sub.textContent = '第 4 步：一句话理由 + 确认';
-    html += `<div class="field"><label>为什么做这笔交易？（必填）</label><textarea id="fReason" placeholder="例: NVDA 财报后回调 4%，IV crush 已完成，30 DTE Call 搏反弹">${gateForm.reason}</textarea></div>`;
+    html += `<div class="field"><label>为什么做这笔交易？（必填）</label><textarea id="fReason" placeholder="例: NVDA 财报后回调 9%，IV crush 已完成，30 DTE Call 搏反弹">${gateForm.reason}</textarea></div>`;
     html += `<div class="card-sub" style="background:var(--surface2);padding:10px;border-radius:var(--radius-sm);margin-bottom:12px">
       <strong>📋 确认清单</strong><br>
       标的：<span id="confirmSymbol">${gateForm.symbol||'未选'}</span> ·
@@ -738,7 +738,7 @@ function nextStep(fromStep){
     if(gateForm.event === 'cpi' || gateForm.event === 'fomc'){
       showToast('⚠️ 事件日禁止开新仓'); return;
     }
-    if(!gateForm.pullback){ currentStep = 1; showNoGo('回调条件不满足——距20日高回调不足3%。等。'); return; }
+    if(!gateForm.pullback){ currentStep = 1; showNoGo('回调条件不满足——距20日高回调不足8%。等。'); return; }
     if(gateForm.ivRank === 'high'){ currentStep = 1; showNoGo('IV Rank > 80——暂停该标的。等 IV 回落。'); return; }
   }
   if(fromStep === 2){
@@ -980,7 +980,7 @@ const QUIZ_POOL = [
   { id:'q45', lv:6, cat:'advanced', type:'场景题', q:'IV 在历史低位（IV Rank < 10），你预期波动率要回归。哪种策略最优？', opts:['卖 Iron Condor','买 Calendar Spread（日历价差）','卖 Covered Call','裸卖高 IV 股票 Put'], ans:1, src:'Tastytrade 进阶策略', exp:'低 IV 时买 Calendar Spread（卖近月 + 买远月）→ 近月 Theta 衰减快于远月 → 赚时间差。且正 Vega 在 IV 回升时受益。低 IV 时卖期权是捡钢镚。' },
   { id:'q46', lv:6, cat:'advanced', type:'场景题', q:'在流动性差的市场做 Delta 动态对冲，最大挑战是什么？', opts:['方向判断','宽买卖价差 → 对冲成本过高','没有挑战','找不到标的'], ans:1, src:'CBOE 做市商教育', exp:'流动性差 = bid-ask spread 宽。每次对冲都要"过价差"——买入用 ask，卖出用 bid。频繁对冲 → 价差累计成本吃掉收益。' },
   { id:'q47', lv:6, cat:'advanced', type:'概念题', q:'Collar（领圈策略）的构建方法是？', opts:['持股 + 卖 Call + 买 Put','只买 Put','只卖 Call','买 Call + 买 Put'], ans:0, src:'OIC 进阶策略', exp:'Collar = 持有正股 + 买 Put（保护下行）+ 卖 Call（抵减 Put 成本）。成本可接近零。代价是上档被封顶。适合"想保护但不想花钱"的场景。' },
-  { id:'q48', lv:6, cat:'advanced', type:'概念题', q:'你的入场框架要求回调 ≥ 3% 的理由是什么？', opts:['随便写的','只做大跌反弹 — 不追高，等别人恐慌完再入场','3% 是魔法数字','为了算得快'], ans:1, src:'期权操盘计划', exp:'回调 ≥ 3% = 确认"有人已经在恐慌卖出"。你在他们卖完后再进去，成本更低、安全边际更高。追高是散户最常见的亏法。' },
+  { id:'q48', lv:6, cat:'advanced', type:'概念题', q:'你的入场框架要求回调 ≥ 8% 的理由是什么？', opts:['随便写的','只做大跌反弹 — 不追高，等别人恐慌完再入场','8% 是魔法数字','为了算得快'], ans:1, src:'期权操盘计划', exp:'回调 ≥ 3% = 确认"有人已经在恐慌卖出"。你在他们卖完后再进去，多日累计回调 8% 才有足够的安全边际——NVDA 实盘：单日从不跌超 5%，但累计回调曾达 -10.2%。' },
   { id:'q49', lv:6, cat:'events', type:'概念题', q:'0DTE 在你的框架里属于什么？', opts:['高风险高回报策略','永远禁止 — 这是赌博','仅在 CPI 日可用','专业策略'], ans:1, src:'期权操盘计划', exp:'0DTE 在你的禁止清单——"发现一次，当周停止交易"。到期日 Gamma 爆炸 + Theta 归零的叠加效应让 0DTE 几乎等于赌博。' },
   { id:'q50', lv:6, cat:'advanced', type:'概念题', q:'"三池弹药系统"中的池三（长期锚）是什么？', opts:['NVDA 个股','SOXX ETF — 每月定投，买了不卖','SPY ETF','美国国债'], ans:1, src:'期权操盘计划', exp:'池三 = $500/月买 SOXX，买了就不卖。不是赚钱工具，是心理锚。期权跌 40% 时看一眼——它还在。让你敢睡。' },
 ];

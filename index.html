@@ -805,7 +805,7 @@ function showNoGo(reason){
   };
   save(data);
   let html = `<div class="result-banner no"><div class="big">🔴</div><div class="msg">今天不交易</div><div class="detail">${reason}</div></div>`;
-  html += `<button class="btn btn-outline btn-sm" onclick="resetGate()">重新检查</button>`;
+  html += `<div class="btn-row"><button class="btn btn-outline btn-sm" onclick="resetGate()">重新检查</button><button class="btn btn-danger btn-sm" onclick="clearTodayGate()">🗑 清除</button></div>`;
   document.getElementById('gateContent').innerHTML = html;
   document.getElementById('gateSub').textContent = '决策已完成';
 }
@@ -819,7 +819,7 @@ function showGateResult(g){
     (g.reason||'');
 
   let html = `<div class="result-banner ${cls}"><div class="big">${emoji}</div><div class="msg">${msg}</div><div class="detail">${detail}</div></div>`;
-  html += `<button class="btn btn-outline btn-sm" onclick="resetGate()">重新检查</button>`;
+  html += `<div class="btn-row"><button class="btn btn-outline btn-sm" onclick="resetGate()">重新检查</button><button class="btn btn-danger btn-sm" onclick="clearTodayGate()">🗑 清除今日记录</button></div>`;
   document.getElementById('gateContent').innerHTML = html;
   document.getElementById('gateSub').textContent = '今日已完成 ✓';
 }
@@ -827,7 +827,26 @@ function showGateResult(g){
 function resetGate(){
   currentStep = 0;
   gateForm = { spy:'', vix:'', event:'', tenY:'', symbol:'', pullback:null, ivRank:null, spy50DMA:null, tenYok:null, size:'standard', dte:'30', stopLoss:'', takeProfit:'', reason:'' };
+  // Delete today's gate record so renderGate shows the form again
+  const today = now();
+  if(data.gates[today]){
+    delete data.gates[today];
+    // Also remove any pending auto-created trades for today
+    data.trades = data.trades.filter(t => !(t.date === today && t.gateId === today));
+    save(data);
+  }
   renderGate();
+}
+
+function clearTodayGate(){
+  if(!confirm('删除今日决策记录和关联的测试交易？')) return;
+  const today = now();
+  delete data.gates[today];
+  data.trades = data.trades.filter(t => !(t.date === today && t.gateId === today));
+  save(data);
+  resetGate();
+  renderLog();
+  showToast('今日记录已清除');
 }
 
 // ═══════════════════════════════════
@@ -856,6 +875,9 @@ function renderLog(){
         <span>${t.note?.slice(0,50)||''}</span>
         <span>${t.compliant?'✅ 合规':'🚩 未走决策门'}</span>
       </div>
+      <div style="text-align:right;margin-top:4px">
+        <button onclick="deleteTrade(${t.id})" style="background:none;border:none;color:var(--red);font-size:.75rem;cursor:pointer;font-family:inherit">🗑 删除</button>
+      </div>
       ${t.status === 'pending' ? `
       <div class="btn-row" style="margin-top:8px">
         <input type="number" id="res_${t.id}" placeholder="盈亏 $" style="flex:1;font-size:.9rem;padding:8px 12px">
@@ -878,6 +900,22 @@ function closeTrade(id){
   save(data);
   renderLog();
   showToast(result > 0 ? '💰 盈利记录已保存' : '📉 亏损记录已保存');
+}
+
+function deleteTrade(id){
+  const t = data.trades.find(x => x.id === id);
+  if(!t) return;
+  const label = t.symbol + ' ' + t.date;
+  if(!confirm('删除交易：' + label + '？')) return;
+  data.trades = data.trades.filter(x => x.id !== id);
+  // If this was linked to a gate, also clear the gate
+  if(t.gateId && data.gates[t.gateId]){
+    delete data.gates[t.gateId];
+  }
+  save(data);
+  renderLog();
+  renderGate();
+  showToast('已删除');
 }
 
 // ═══════════════════════════════════

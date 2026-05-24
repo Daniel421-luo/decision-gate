@@ -1,4 +1,4 @@
-const CACHE = 'decision-gate-v1';
+const CACHE = 'decision-gate-v2';
 const FILES = [
   '/decision-gate/',
   '/decision-gate/index.html',
@@ -12,19 +12,19 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(
-    keys.filter(k => k !== CACHE).map(k => caches.delete(k))
-  )));
-  self.clients.claim();
+    keys.map(k => caches.delete(k))
+  )).then(() => self.clients.claim()));
 });
 
+// Network-first: always try network, fall back to cache
 self.addEventListener('fetch', e => {
   e.respondWith(
-    caches.match(e.request).then(r => r || fetch(e.request).then(res => {
+    fetch(e.request).then(res => {
       if(res.ok){
         const clone = res.clone();
         caches.open(CACHE).then(c => c.put(e.request, clone));
       }
       return res;
-    }))
+    }).catch(() => caches.match(e.request))
   );
 });

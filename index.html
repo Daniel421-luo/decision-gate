@@ -244,6 +244,7 @@ textarea:focus{outline:none;border-color:var(--purple);}
   <!-- Header -->
   <div class="header">
     <h1>🧠 期权决策辅助</h1>
+    <div style="font-size:.7rem;color:var(--muted);margin-bottom:4px" id="headerDate"></div>
     <div class="score-row">
       <div class="trust-badge">
         信任分 <span class="val" id="trustScore">--</span>
@@ -421,8 +422,9 @@ function showGateStep(step){
   const sub = document.getElementById('gateSub');
 
   if(step === 0){
-    sub.textContent = '第 1 步：输入今日市场环境（可自动获取）';
-    html += `<button class="btn btn-outline" onclick="fetchMarketData()" id="btnFetch" style="margin-bottom:12px;width:100%">📡 自动获取行情（SPY/VIX/10Y）</button>`;
+    sub.textContent = '第 1 步：输入今日市场环境' + (localStorage.getItem('finnhub_key')||localStorage.getItem('twelvedata_key') ? '（可自动获取）' : '');
+    const hasKey = localStorage.getItem('finnhub_key') || localStorage.getItem('twelvedata_key');
+    html += `<button class="btn btn-outline" onclick="fetchMarketData()" id="btnFetch" style="margin-bottom:12px;width:100%">📡 自动获取行情（SPY/VIX/10Y）${hasKey?'':' — 需先设置 ⚙️'}</button>`;
     html += `<div class="field"><label>SPY 价格</label><input type="text" id="fSpy" placeholder="例: 748" value="${gateForm.spy}"></div>`;
     html += `<div class="field"><label>VIX</label><input type="text" id="fVix" placeholder="例: 16.7" value="${gateForm.vix}"></div>`;
     html += `<div class="field"><label>10Y 美债收益率 (%)</label><input type="text" id="fTenY" placeholder="例: 4.63" value="${gateForm.tenY}"></div>`;
@@ -483,6 +485,14 @@ function useDefaults(){
   currentStep = 0; renderGate();
   showToast('已填入保守默认值');
 }
+async function fetchWithRetry(url, retries=2){
+  for(let i=0;i<=retries;i++){
+    try{ const r=await fetch(url); if(r.ok) return r; }catch(e){}
+    if(i<retries) await new Promise(r=>setTimeout(r,500*(i+1)));
+  }
+  return null;
+}
+
 async function fetchMarketData(){
   const fKey = localStorage.getItem('finnhub_key');
   const tKey = localStorage.getItem('twelvedata_key');
@@ -493,37 +503,51 @@ async function fetchMarketData(){
   const btn = document.getElementById('btnFetch');
   if(btn){ btn.textContent = '⏳ 获取中...'; btn.disabled = true; }
 
-  let results = [];
+  let results = [], errors = [];
   // Source 1: Finnhub
   if(fKey){
     try{
-      const [spy,vix,tnx] = await Promise.all([
-        fetch('https://finnhub.io/api/v1/quote?symbol=SPY&token='+fKey).then(r=>r.json()),
-        fetch('https://finnhub.io/api/v1/quote?symbol=^VIX&token='+fKey).then(r=>r.json()),
-        fetch('https://finnhub.io/api/v1/quote?symbol=^TNX&token='+fKey).then(r=>r.json())
+      const res = await fetchWithRetry('https://finnhub.io/api/v1/quote?symbol=SPY&token='+fKey);
+      if(!res) throw new Error('网络超时');
+      const spy = await res.json();
+      if(spy.error) throw new Error(spy.error);
+      const [vixRes,tnxRes] = await Promise.all([
+        fetchWithRetry('https://finnhub.io/api/v1/quote?symbol=^VIX&token='+fKey),
+        fetchWithRetry('https://finnhub.io/api/v1/quote?symbol=^TNX&token='+fKey)
       ]);
-      if(!spy.error){ results.push({src:'Finnhub', spy:spy.c, vix:vix.c, tnx:tnx.c}); }
-    }catch(e){}
+      const vix = vixRes ? await vixRes.json() : {};
+      const tnx = tnxRes ? await tnxRes.json() : {};
+      if(!vix.error && !tnx.error){
+        results.push({src:'Finnhub', spy:spy.c, vix:vix.c, tnx:tnx.c});
+      }
+    }catch(e){ errors.push('Finnhub: '+e.message); }
   }
   // Source 2: Twelve Data
   if(tKey){
     try{
-      const [spy,vix,tnx] = await Promise.all([
-        fetch('https://api.twelvedata.com/price?symbol=SPY&apikey='+tKey).then(r=>r.json()),
-        fetch('https://api.twelvedata.com/price?symbol=VIX&apikey='+tKey).then(r=>r.json()),
-        fetch('https://api.twelvedata.com/price?symbol=TNX&apikey='+tKey).then(r=>r.json())
+      const res = await fetchWithRetry('https://api.twelvedata.com/price?symbol=SPY&apikey='+tKey);
+      if(!res) throw new Error('网络超时');
+      const spy = await res.json();
+      if(spy.code) throw new Error(spy.message||'Key无效');
+      const [vixRes,tnxRes] = await Promise.all([
+        fetchWithRetry('https://api.twelvedata.com/price?symbol=VIX&apikey='+tKey),
+        fetchWithRetry('https://api.twelvedata.com/price?symbol=TNX&apikey='+tKey)
       ]);
-      if(spy.price && !spy.code){ results.push({src:'TwelveData', spy:parseFloat(spy.price), vix:parseFloat(vix.price), tnx:parseFloat(tnx.price)}); }
-    }catch(e){}
+      const vix = vixRes ? await vixRes.json() : {};
+      const tnx = tnxRes ? await tnxRes.json() : {};
+      if(!vix.code && !tnx.code){
+        results.push({src:'TwelveData', spy:parseFloat(spy.price), vix:parseFloat(vix.price), tnx:parseFloat(tnx.price)});
+      }
+    }catch(e){ errors.push('TwelveData: '+e.message); }
   }
 
   if(results.length === 0){
     if(btn){ btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false; }
-    showToast('⚠️ 所有数据源失败，请检查 API Key 或手动输入');
+    showToast('⚠️ 获取失败: ' + (errors.join('; ') || '未知错误'));
     return;
   }
 
-  // Cross-validate if multiple sources
+  // Cross-validate
   const primary = results[0];
   gateForm.spy = primary.spy.toFixed(0);
   gateForm.vix = primary.vix.toFixed(1);
@@ -535,13 +559,13 @@ async function fetchMarketData(){
     const spyDiff = Math.abs(results[0].spy - results[1].spy);
     const pctDiff = (spyDiff / results[0].spy * 100).toFixed(2);
     if(pctDiff > 2){
-      msg += ' ⚠️ 两源差' + pctDiff + '%';
+      msg += ' ⚠️ 两源差' + pctDiff + '% 请核实';
     } else {
-      msg += ' ✓ 交叉验证通过 (' + results.map(r=>r.src).join('+') + ')';
+      msg += ' ✓ 交叉验证通过';
     }
-  } else {
-    msg += ' (' + results[0].src + ' 单源)';
   }
+  msg += ' [' + results.map(r=>r.src).join('+') + ']';
+  if(errors.length>0) msg += ' (1源失败)';
   showToast(msg);
   if(btn){ btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false; }
 }
@@ -572,14 +596,39 @@ function showSettings(){
   document.getElementById('steps').innerHTML = '';
 }
 
-function saveApiKey(){
+async function saveApiKey(){
   const fk = document.getElementById('finnhubKey').value.trim();
   const tk = document.getElementById('twelvedataKey').value.trim();
-  if(fk) localStorage.setItem('finnhub_key', fk);
-  if(tk) localStorage.setItem('twelvedata_key', tk);
   if(!fk && !tk){ showToast('请至少输入一个 API Key'); return; }
-  showToast('✅ API Key 已保存 (' + (fk?'Finnhub':'') + (fk&&tk?' + ':'') + (tk?'TwelveData':'') + ')');
-  resetGate();
+
+  // Validate keys
+  let status = [];
+  if(fk){
+    try{
+      const r = await fetch('https://finnhub.io/api/v1/quote?symbol=SPY&token='+fk);
+      const d = await r.json();
+      if(d.c !== undefined){
+        localStorage.setItem('finnhub_key', fk);
+        status.push('Finnhub ✅');
+      } else {
+        status.push('Finnhub ❌ ' + (d.error||'无效'));
+      }
+    }catch(e){ status.push('Finnhub ❌ 网络错误'); }
+  }
+  if(tk){
+    try{
+      const r = await fetch('https://api.twelvedata.com/price?symbol=SPY&apikey='+tk);
+      const d = await r.json();
+      if(d.price && !d.code){
+        localStorage.setItem('twelvedata_key', tk);
+        status.push('TwelveData ✅');
+      } else {
+        status.push('TwelveData ❌ ' + (d.message||'无效'));
+      }
+    }catch(e){ status.push('TwelveData ❌ 网络错误'); }
+  }
+  showToast('💾 ' + status.join(' · '));
+  if(status.some(s=>s.includes('✅'))) resetGate();
 }
 function toggleRow(label, id, val, hint){
   return `<div class="toggle-row">
@@ -876,6 +925,9 @@ function getTodayQuestions(){
   return picked;
 }
 
+function totalAnsEver(){
+  return Object.values(data.quiz.answers).reduce((s,a)=>s+a.history.length,0);
+}
 function renderLearn(){
   const today = now();
   const qids = getTodayQuestions();
@@ -915,7 +967,10 @@ function renderLearn(){
     }
     html += `</div>`;
   });
-  document.getElementById('quizContent').innerHTML = html || '<div style="text-align:center;color:var(--muted);padding:20px">🎉 今天没有需要复习的题目！</div>';
+  const emptyMsg = totalAnsEver() > 0
+    ? '🎉 今天题目已全部完成！明天再来。'
+    : '📚 题库已就绪，50 题分 6 层级。每天 5 题，由浅入深。';
+  document.getElementById('quizContent').innerHTML = html || '<div style="text-align:center;color:var(--muted);padding:20px">'+emptyMsg+'</div>';
 }
 
 function answerQuiz(qid, chosen){
@@ -1077,8 +1132,23 @@ function showToast(msg){
 // ═══════════════════════════════════
 // INIT
 // ═══════════════════════════════════
+// Header date
+const weekdays = ['周日','周一','周二','周三','周四','周五','周六'];
+const todayDate = new Date();
+document.getElementById('headerDate').textContent =
+  todayDate.getFullYear() + '年' + (todayDate.getMonth()+1) + '月' + todayDate.getDate() + '日 ' + weekdays[todayDate.getDay()];
+
 renderGate();
 renderDash();
+
+// Auto-fetch market data if keys exist and no gate completed today
+const todayGate = data.gates[now()];
+if(!todayGate || !todayGate.completed){
+  const hasKey = localStorage.getItem('finnhub_key') || localStorage.getItem('twelvedata_key');
+  if(hasKey){
+    setTimeout(fetchMarketData, 500);
+  }
+}
 
 // Service Worker
 if('serviceWorker' in navigator){

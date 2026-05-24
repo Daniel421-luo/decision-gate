@@ -252,10 +252,9 @@ textarea:focus{outline:none;border-color:var(--purple);}
       </div>
     </div>
     <div class="version-row">
-      v1.0 <button class="refresh-btn" onclick="checkUpdate()">🔄 更新</button>
+      <button class="refresh-btn" onclick="checkUpdate()">🔄 更新</button>
       <button class="refresh-btn" onclick="exportData()">📤 导出</button>
       <button class="refresh-btn" onclick="document.getElementById('importFile').click()">📥 导入</button>
-      <button class="refresh-btn" onclick="showSettings()">⚙️</button>
     </div>
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
   </div>
@@ -333,6 +332,13 @@ textarea:focus{outline:none;border-color:var(--purple);}
 </div>
 
 <script>
+// ═══════════════════════════════════
+// API KEYS (hardcoded, no manual entry needed)
+// ═══════════════════════════════════
+const FH_KEY = 'd89buo1r01qla01mv1m0d89buo1r01qla01mv1mg';
+const TD_KEY = 'b8ce0f87b01d48e8ba0b61e573f98f43';
+const WATCHLIST = ['NVDA','SOXX','DRAM','INTC'];
+
 // ═══════════════════════════════════
 // DATA MODEL
 // ═══════════════════════════════════
@@ -422,17 +428,19 @@ function showGateStep(step){
   const sub = document.getElementById('gateSub');
 
   if(step === 0){
-    sub.textContent = '第 1 步：输入今日市场环境' + (localStorage.getItem('finnhub_key')||localStorage.getItem('twelvedata_key') ? '（可自动获取）' : '');
-    const hasKey = localStorage.getItem('finnhub_key') || localStorage.getItem('twelvedata_key');
-    html += `<button class="btn btn-outline" onclick="fetchMarketData()" id="btnFetch" style="margin-bottom:12px;width:100%">📡 自动获取行情（SPY/VIX/10Y）${hasKey?'':' — 需先设置 ⚙️'}</button>`;
-    html += `<div class="field"><label>SPY 价格</label><input type="text" id="fSpy" placeholder="例: 748" value="${gateForm.spy}"></div>`;
-    const vixLabel = gateForm._vixIsReal ? 'VIX' : 'VXX（VIX 替代 ETF）';
-    const tenYLabel = gateForm._tnxIsReal ? '10Y 美债收益率 (%)' : 'IEF（10Y 替代 ETF）';
-    html += `<div class="field"><label>${vixLabel}</label><input type="text" id="fVix" placeholder="例: 16.7" value="${gateForm.vix}"></div>`;
-    html += `<div class="field"><label>${tenYLabel}</label><input type="text" id="fTenY" placeholder="例: 4.63" value="${gateForm.tenY}"></div>`;
+    sub.textContent = '第 1 步：确认今日市场环境';
+    html += `<button class="btn btn-outline" onclick="fetchMarketData()" id="btnFetch" style="margin-bottom:10px;width:100%">📡 刷新行情</button>`;
+    // SPY (auto)
+    html += `<div class="field"><label>SPY 价格 <span style="font-size:.75rem;color:var(--green)">自动</span></label><input type="text" id="fSpy" value="${gateForm.spy||'点击刷新...'}" readonly style="background:var(--green-bg);border-color:#34c75930"></div>`;
+    // VIX (manual, persisted)
+    html += `<div class="field"><label>VIX 恐慌指数 <span style="font-size:.75rem;color:var(--amber)">手动输入</span></label><input type="text" id="fVix" placeholder="例: 16.7" value="${gateForm.vix||''}"></div>`;
+    // 10Y (manual, persisted)
+    html += `<div class="field"><label>10Y 美债收益率 (%) <span style="font-size:.75rem;color:var(--amber)">手动输入</span></label><input type="text" id="fTenY" placeholder="例: 4.63" value="${gateForm.tenY||''}"></div>`;
     html += `<div class="field"><label>今日事件</label><select id="fEvent"><option value="">无重大事件</option><option value="cpi">CPI 发布</option><option value="fomc">FOMC</option><option value="nfp">NFP</option><option value="earnings">重要财报</option></select></div>`;
-    html += `<button class="btn btn-primary" onclick="nextStep(0)">下一步 →</button>`;
-    html += `<div class="help" style="margin-top:8px;text-align:center">也可<a href="#" onclick="useDefaults()" style="color:var(--purple)">使用保守默认值</a></div>`;
+    // News feed
+    html += `<div class="card" style="margin-top:12px;padding:12px"><div style="font-size:.85rem;font-weight:600;margin-bottom:4px">📡 实时动态</div><div id="newsFeed" style="font-size:.82rem">点击刷新行情后自动加载</div></div>`;
+    html += `<button class="btn btn-primary" onclick="nextStep(0)" style="margin-top:10px">下一步 →</button>`;
+    html += `<div class="help" style="margin-top:6px;text-align:center">VIX/10Y 输入一次后自动记住</div>`;
   } else if(step === 1){
     sub.textContent = '第 2 步：选择标的 + 确认入场条件';
     html += `<div class="field"><label>标的</label><select id="fSymbol"><option value="">-- 选择 --</option><option value="NVDA">NVDA 🥇 AI龙头</option><option value="SOXX">SOXX 🥈 半导体ETF</option><option value="DRAM">DRAM 🥈 存储ETF</option><option value="INTC">INTC 🥉 事件埋伏</option></select></div>`;
@@ -482,11 +490,6 @@ function showGateStep(step){
   }
 }
 
-function useDefaults(){
-  gateForm.spy = '745'; gateForm.vix = '18'; gateForm.tenY = '4.5'; gateForm.event = '';
-  currentStep = 0; renderGate();
-  showToast('已填入保守默认值');
-}
 async function fetchWithRetry(url, retries=2){
   for(let i=0;i<=retries;i++){
     try{ const r=await fetch(url); if(r.ok) return r; }catch(e){}
@@ -496,156 +499,140 @@ async function fetchWithRetry(url, retries=2){
 }
 
 async function fetchMarketData(){
-  const fKey = localStorage.getItem('finnhub_key');
-  const tKey = localStorage.getItem('twelvedata_key');
-  if(!fKey && !tKey){
-    showToast('⚙️ 请先设置 API Key → 点顶部 ⚙️');
-    return;
-  }
   const btn = document.getElementById('btnFetch');
   if(btn){ btn.textContent = '⏳ 获取中...'; btn.disabled = true; }
 
-  let results = [], errors = [];
+  let spyPrice = null, errors = [];
 
-  // Helper: fetch single symbol from Finnhub
-  async function fh(sym){ const r=await fetchWithRetry('https://finnhub.io/api/v1/quote?symbol='+sym+'&token='+fKey); if(!r) throw new Error('timeout'); const d=await r.json(); if(d.error) throw new Error(d.error); return d.c; }
-  // Helper: fetch single symbol from Twelve Data
-  async function td(sym){ const r=await fetchWithRetry('https://api.twelvedata.com/price?symbol='+sym+'&apikey='+tKey); if(!r) throw new Error('timeout'); const d=await r.json(); if(d.code) throw new Error(d.message); return parseFloat(d.price); }
+  // Finnhub SPY
+  try{
+    const r = await fetchWithRetry('https://finnhub.io/api/v1/quote?symbol=SPY&token='+FH_KEY);
+    if(!r) throw new Error('timeout');
+    const d = await r.json();
+    if(d.error) throw new Error(d.error);
+    spyPrice = d.c;
+  }catch(e){ errors.push('Finnhub: '+e.message); }
 
-  // Source 1: Finnhub
-  if(fKey){
+  // Twelve Data cross-validation
+  if(TD_KEY){
     try{
-      const spy = await fh('SPY');
-
-      // VIX: try real ^VIX first, fall back to VXX ETF
-      let vix=null, vixFrom='';
-      try{ vix=await fh('%5EVIX'); vixFrom='VIX'; }catch(e){
-        try{ vix=await fh('VXX'); vixFrom='VXX'; }catch(e2){ errors.push('VIX/VXX: '+e2.message); }
+      const r = await fetchWithRetry('https://api.twelvedata.com/price?symbol=SPY&apikey='+TD_KEY);
+      if(!r) throw new Error('timeout');
+      const d = await r.json();
+      if(d.code) throw new Error(d.message);
+      const tdPrice = parseFloat(d.price);
+      if(spyPrice && Math.abs(spyPrice - tdPrice) / spyPrice > 0.02){
+        errors.push('两源SPY差异>2%');
       }
-
-      // TNX: try real ^TNX first, fall back to IEF ETF
-      let tnx=null, tnxFrom='';
-      try{ tnx=await fh('%5ETNX'); tnxFrom='TNX'; }catch(e){
-        try{ tnx=await fh('IEF'); tnxFrom='IEF'; }catch(e2){ errors.push('TNX/IEF: '+e2.message); }
-      }
-
-      results.push({src:'Finnhub', spy, vix:vix||0, tnx:tnx||0, vixFrom, tnxFrom});
-    }catch(e){ errors.push('Finnhub SPY: '+e.message); }
+    }catch(e){ /* silent, just cross-check */ }
   }
 
-  // Source 2: Twelve Data
-  if(tKey){
-    try{
-      const spy = await td('SPY');
-      let vix=null, tnx=null, vixFrom='', tnxFrom='';
-      try{ vix=await td('VIX'); vixFrom='VIX'; }catch(e){
-        try{ vix=await td('VXX'); vixFrom='VXX'; }catch(e2){ errors.push('VIX/VXX: '+e2.message); }
-      }
-      try{ tnx=await td('TNX'); tnxFrom='TNX'; }catch(e){
-        try{ tnx=await td('IEF'); tnxFrom='IEF'; }catch(e2){ errors.push('TNX/IEF: '+e2.message); }
-      }
-      results.push({src:'TwelveData', spy, vix:vix||0, tnx:tnx||0, vixFrom, tnxFrom});
-    }catch(e){ errors.push('TwelveData SPY: '+e.message); }
-  }
-
-  if(results.length === 0){
+  if(!spyPrice){
     if(btn){ btn.textContent = '📡 重试'; btn.disabled = false; }
-    showToast('⚠️ 获取失败: ' + (errors.slice(0,2).join('; ') || '网络错误'));
+    showToast('⚠️ 获取失败: ' + (errors.join('; ') || '网络错误'));
     return;
   }
 
-  const primary = results[0];
-  gateForm.spy = primary.spy.toFixed(0);
-  const vixIsReal = primary.vixFrom === 'VIX';
-  const tnxIsReal = primary.tnxFrom === 'TNX';
-  gateForm.vix = primary.vix ? (vixIsReal ? primary.vix.toFixed(1) : '$'+primary.vix.toFixed(2)) : '';
-  gateForm.tenY = primary.tnx ? (tnxIsReal ? primary.tnx.toFixed(2) : '$'+primary.tnx.toFixed(2)) : '';
-  gateForm._vixIsReal = vixIsReal;
-  gateForm._tnxIsReal = tnxIsReal;
+  gateForm.spy = spyPrice.toFixed(0);
+  // Restore persisted VIX/10Y if available
+  if(!gateForm.vix) gateForm.vix = localStorage.getItem('last_vix') || '';
+  if(!gateForm.tenY) gateForm.tenY = localStorage.getItem('last_10y') || '';
   currentStep = 0; renderGate();
-
-  let msg = '✅ SPY ' + gateForm.spy;
-  if(gateForm.vix){
-    msg += vixIsReal ? ' · VIX ' + gateForm.vix : ' · VXX ' + gateForm.vix;
-  }
-  if(gateForm.tenY){
-    msg += tnxIsReal ? ' · 10Y ' + gateForm.tenY + '%' : ' · IEF ' + gateForm.tenY;
-  }
-
-  if(results.length >= 2){
-    const spyDiff = Math.abs(results[0].spy - results[1].spy);
-    const pctDiff = (spyDiff / results[0].spy * 100).toFixed(2);
-    msg += pctDiff > 2 ? ' ⚠️ 两源差'+pctDiff+'%' : ' ✓ 验证通过';
-  }
-  msg += ' [' + results.map(r=>r.src).join('+') + ']';
-  if(results[0].partial) msg += ' (部分字段缺失)';
-  showToast(msg);
-  if(btn){ btn.textContent = '📡 自动获取行情（SPY/VIX/10Y）'; btn.disabled = false; }
+  fetchAllNews(); // Load news + events in parallel
+  showToast('✅ SPY ' + gateForm.spy);
+  if(btn){ btn.textContent = '📡 刷新行情'; btn.disabled = false; }
 }
 
-function showSettings(){
-  const fKey = localStorage.getItem('finnhub_key') || '';
-  const tKey = localStorage.getItem('twelvedata_key') || '';
-  const html = `<div style="padding:16px">
-    <h3 style="margin-bottom:12px">⚙️ 数据源设置</h3>
-    <p style="font-size:.88rem;color:var(--muted);margin-bottom:12px">
-      至少设置一个即可使用。两个都设 → 交叉验证更可靠。
-    </p>
-    <div class="field">
-      <label>Finnhub API Key（首选）</label>
-      <input type="text" id="finnhubKey" placeholder="粘贴 Finnhub Key" value="${fKey}">
-      <div class="help"><a href="https://finnhub.io/register" target="_blank" style="color:var(--purple)">→ 免费注册（30秒）</a></div>
-    </div>
-    <div class="field">
-      <label>Twelve Data API Key（备用 + 交叉验证）</label>
-      <input type="text" id="twelvedataKey" placeholder="粘贴 Twelve Data Key" value="${tKey}">
-      <div class="help"><a href="https://twelvedata.com/apikey" target="_blank" style="color:var(--purple)">→ 免费注册（30秒）</a></div>
-    </div>
-    <button class="btn btn-primary" onclick="saveApiKey()">💾 保存</button>
-    <button class="btn btn-outline" style="margin-top:8px" onclick="renderGate()">← 返回</button>
-  </div>`;
-  document.getElementById('gateContent').innerHTML = html;
-  document.getElementById('gateSub').textContent = '设置';
-  document.getElementById('steps').innerHTML = '';
+async function fetchNews(){
+  const today = now();
+  try{
+    const r = await fetchWithRetry('https://finnhub.io/api/v1/news?category=general&token='+FH_KEY);
+    if(!r) return [];
+    const all = await r.json();
+    // Filter: today's news, high-impact or relevant
+    return all.filter(a => {
+      const dt = new Date(a.datetime*1000).toISOString().slice(0,10);
+      return dt === today || dt === prevDay();
+    }).slice(0, 8);
+  }catch(e){ return []; }
 }
 
-async function saveApiKey(){
-  const fk = document.getElementById('finnhubKey').value.trim();
-  const tk = document.getElementById('twelvedataKey').value.trim();
-  if(!fk && !tk){ showToast('请至少输入一个 API Key'); return; }
-
-  // Validate keys
-  let status = [];
-  if(fk){
-    try{
-      const r = await fetch('https://finnhub.io/api/v1/quote?symbol=SPY&token='+fk);
-      const d = await r.json();
-      if(d.c !== undefined){
-        localStorage.setItem('finnhub_key', fk);
-        status.push('Finnhub ✅');
-      } else {
-        status.push('Finnhub ❌ ' + (d.error||'无效'));
-      }
-    }catch(e){ status.push('Finnhub ❌ 网络错误'); }
-  }
-  if(tk){
-    try{
-      const r = await fetch('https://api.twelvedata.com/price?symbol=SPY&apikey='+tk);
-      const d = await r.json();
-      if(d.price && !d.code){
-        localStorage.setItem('twelvedata_key', tk);
-        status.push('TwelveData ✅');
-      } else {
-        status.push('TwelveData ❌ ' + (d.message||'无效'));
-      }
-    }catch(e){ status.push('TwelveData ❌ 网络错误'); }
-  }
-  showToast('💾 ' + status.join(' · '));
-  if(status.some(s=>s.includes('✅'))){
-    resetGate();
-    setTimeout(fetchMarketData, 300); // Auto-fetch after saving keys
-  }
+async function fetchTickerNews(symbol){
+  try{
+    const from = daysAgo(3);
+    const to = now();
+    const r = await fetchWithRetry(`https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=${from}&to=${to}&token=`+FH_KEY);
+    if(!r) return [];
+    return (await r.json()).slice(0, 3);
+  }catch(e){ return []; }
 }
+
+async function fetchEvents(){
+  try{
+    const r = await fetchWithRetry('https://finnhub.io/api/v1/calendar/economic?token='+FH_KEY);
+    if(!r) return [];
+    const data = await r.json();
+    const today = now();
+    // Filter US events happening today or this week
+    const usEvents = (data.economicCalendar||[]).filter(e =>
+      e.country === 'US' && e.time && e.time.slice(0,10) === today
+    );
+    return usEvents;
+  }catch(e){ return []; }
+}
+
+async function fetchAllNews(){
+  const el = document.getElementById('newsFeed');
+  if(el) el.innerHTML = '<div style="font-size:.85rem;color:var(--muted);padding:8px">⏳ 加载新闻...</div>';
+
+  // Parallel fetch
+  const [general, nvda, soxx, events] = await Promise.all([
+    fetchNews(),
+    fetchTickerNews('NVDA'),
+    fetchTickerNews('SOXX'),
+    fetchEvents()
+  ]);
+
+  let html = '';
+
+  // Events first
+  if(events.length > 0){
+    html += '<div style="margin-bottom:8px">';
+    events.forEach(e => {
+      const impact = e.impact === 'high' ? '🔴' : (e.impact === 'medium' ? '🟡' : '');
+      html += `<div style="font-size:.82rem;padding:4px 0;color:var(--red)">📅 ${impact} ${e.event} ${e.actual?'→ '+e.actual:''}</div>`;
+    });
+    html += '</div>';
+  }
+
+  // Ticker news
+  const tickerNews = [...(nvda||[]).slice(0,2), ...(soxx||[]).slice(0,2)];
+  if(tickerNews.length > 0){
+    html += '<div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">📰 标的动态</div>';
+    tickerNews.slice(0,4).forEach(n => {
+      const src = n.related || n.source || '';
+      html += `<div style="font-size:.82rem;padding:3px 0;border-bottom:1px solid var(--border)">${n.headline?.slice(0,70)} <span style="color:var(--muted)">${src}</span></div>`;
+    });
+  }
+
+  // General market
+  if(general.length > 0){
+    html += '<div style="font-size:.78rem;color:var(--muted);margin:8px 0 4px">🌍 市场要闻</div>';
+    general.slice(0,4).forEach(n => {
+      html += `<div style="font-size:.8rem;padding:3px 0;border-bottom:1px solid var(--border)">${n.headline?.slice(0,80)}</div>`;
+    });
+  }
+
+  if(!html) html = '<div style="font-size:.82rem;color:var(--muted);padding:8px">暂无更新</div>';
+  if(el) el.innerHTML = html;
+}
+
+function prevDay(){ const d=new Date(); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); }
+function daysAgo(n){ const d=new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); }
+
+// ═══════════════════════════════════
+// UTILS
+// ═══════════════════════════════════
 function toggleRow(label, id, val, hint){
   return `<div class="toggle-row">
     <span class="toggle-label">${label} <span class="toggle-hint">${hint}</span></span>
@@ -669,8 +656,8 @@ function saveGateDraft(){
   const tenYEl = document.getElementById('fTenY');
   const eventEl = document.getElementById('fEvent');
   if(spyEl) gateForm.spy = spyEl.value;
-  if(vixEl) gateForm.vix = vixEl.value;
-  if(tenYEl) gateForm.tenY = tenYEl.value;
+  if(vixEl){ gateForm.vix = vixEl.value; if(vixEl.value) localStorage.setItem('last_vix', vixEl.value); }
+  if(tenYEl){ gateForm.tenY = tenYEl.value; if(tenYEl.value) localStorage.setItem('last_10y', tenYEl.value); }
   if(eventEl) gateForm.event = eventEl.value;
   const symEl = document.getElementById('fSymbol');
   if(symEl) gateForm.symbol = symEl.value;
@@ -1165,14 +1152,17 @@ document.getElementById('headerDate').textContent =
 renderGate();
 renderDash();
 
-// Auto-fetch market data if keys exist and no gate completed today
-const todayGate = data.gates[now()];
-if(!todayGate || !todayGate.completed){
-  const hasKey = localStorage.getItem('finnhub_key') || localStorage.getItem('twelvedata_key');
-  if(hasKey){
-    setTimeout(fetchMarketData, 500);
-  }
-}
+// Restore persisted VIX/10Y
+if(!gateForm.vix) gateForm.vix = localStorage.getItem('last_vix') || '';
+if(!gateForm.tenY) gateForm.tenY = localStorage.getItem('last_10y') || '';
+
+// Auto-fetch SPY + news on every page load
+setTimeout(async () => {
+  await fetchMarketData();
+  await fetchAllNews();
+  // Also fetch news after gate renders
+  renderGate();
+}, 300);
 
 // Service Worker
 if('serviceWorker' in navigator){

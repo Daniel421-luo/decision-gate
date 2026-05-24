@@ -445,9 +445,9 @@ function showGateStep(step){
     sub.textContent = '第 2 步：选择标的 + 确认入场条件';
     html += `<div class="field"><label>标的</label><select id="fSymbol"><option value="">-- 选择 --</option><option value="NVDA">NVDA 🥇 AI龙头</option><option value="SOXX">SOXX 🥈 半导体ETF</option><option value="DRAM">DRAM 🥈 存储ETF</option><option value="INTC">INTC 🥉 事件埋伏</option></select></div>`;
     html += toggleRow('回调 ≥ 3%（距20日高）', 'fPullback', gateForm.pullback, '涨停之后必须回调才买');
-    html += toggleRow('IV Rank < 80', 'fIvRank', gateForm.ivRank, '80以上暂停该标的');
+    html += `<div class="field"><label>IV Rank</label><select id="fIvRank"><option value="">-- 选择 --</option><option value="low">🟢 < 50（正常出击）</option><option value="mid">🟡 50-80（降一级）</option><option value="high">🔴 > 80（暂停该标的）</option></select></div>`;
     html += toggleRow('SPY 在 50 DMA 上方', 'fSpyDMA', gateForm.spy50DMA, '跌破降一级，不暂停');
-    html += toggleRow('10Y 单日波动 < 15bp', 'fTenYok', gateForm.tenYok, '≥15bp 不开新仓');
+    html += toggleRow('10Y 单日波动 < 15bp (0.15%)', 'fTenYok', gateForm.tenYok, '≥15bp=利率恐慌重定价，当日不开仓');
     html += `<div class="btn-row" style="margin-top:12px"><button class="btn btn-outline" onclick="currentStep=0;renderGate();saveGateDraft()">← 上一步</button><button class="btn btn-primary" onclick="nextStep(1)">下一步 →</button></div>`;
   } else if(step === 2){
     sub.textContent = '第 3 步：确认风险参数';
@@ -477,6 +477,8 @@ function showGateStep(step){
     setTimeout(()=>{
       const sel = document.getElementById('fSymbol');
       if(sel) sel.value = gateForm.symbol;
+      const iv = document.getElementById('fIvRank');
+      if(iv) iv.value = gateForm.ivRank || '';
     },10);
   }
   if(step===2){
@@ -643,7 +645,7 @@ function toggleRow(label, id, val, hint){
   </div>`;
 }
 function setToggle(id,val){
-  const map = {fPullback:'pullback',fIvRank:'ivRank',fSpyDMA:'spy50DMA',fTenYok:'tenYok'};
+  const map = {fPullback:'pullback',fSpyDMA:'spy50DMA',fTenYok:'tenYok'};
   gateForm[map[id]||id] = val;
   renderGate();
   saveGateDraft();
@@ -661,6 +663,8 @@ function saveGateDraft(){
   if(eventEl) gateForm.event = eventEl.value;
   const symEl = document.getElementById('fSymbol');
   if(symEl) gateForm.symbol = symEl.value;
+  const ivEl = document.getElementById('fIvRank');
+  if(ivEl) gateForm.ivRank = ivEl.value;
   const sizeEl = document.getElementById('fSize');
   if(sizeEl) gateForm.size = sizeEl.value;
   const dteEl = document.getElementById('fDte');
@@ -682,13 +686,13 @@ function nextStep(fromStep){
   if(fromStep === 1){
     if(!gateForm.symbol){ showToast('请选择标的'); return; }
     if(gateForm.pullback === null){ showToast('请确认回调条件'); return; }
-    if(gateForm.ivRank === null){ showToast('请确认 IV Rank 条件'); return; }
+    if(!gateForm.ivRank){ showToast('请选择 IV Rank'); return; }
     // Block CPI/FOMC days
     if(gateForm.event === 'cpi' || gateForm.event === 'fomc'){
       showToast('⚠️ 事件日禁止开新仓'); return;
     }
     if(!gateForm.pullback){ currentStep = 1; showNoGo('回调条件不满足——距20日高回调不足3%。等。'); return; }
-    if(gateForm.ivRank === false){ currentStep = 1; showNoGo('IV Rank ≥ 80——暂停该标的或降级。'); return; }
+    if(gateForm.ivRank === 'high'){ currentStep = 1; showNoGo('IV Rank > 80——暂停该标的。等 IV 回落。'); return; }
   }
   if(fromStep === 2){
     // All clear
@@ -710,14 +714,15 @@ function submitGate(){
   saveGateDraft();
   if(!gateForm.reason.trim()){ showToast('请填写交易理由'); return; }
   const today = now();
-  const allPass = gateForm.pullback === true && gateForm.ivRank === true;
+  // Determine IV Rank tier for display
+  const ivLabel = gateForm.ivRank === 'low' ? '🟢 <50' : (gateForm.ivRank === 'mid' ? '🟡 50-80' : '🔴 >80');
 
   data.gates[today] = {
     completed: true,
     timestamp: new Date().toISOString(),
     market: { spy: gateForm.spy, vix: gateForm.vix, event: gateForm.event, tenY: gateForm.tenY },
     symbol: gateForm.symbol,
-    conditions: { pullback: gateForm.pullback, ivRank: gateForm.ivRank, spy50DMA: gateForm.spy50DMA, tenYok: gateForm.tenYok },
+    conditions: { pullback: gateForm.pullback, ivRank: ivLabel, spy50DMA: gateForm.spy50DMA, tenYok: gateForm.tenYok },
     plan: { size: gateForm.size, dte: parseInt(gateForm.dte), takeProfit: gateForm.takeProfit, stopLoss: gateForm.stopLoss },
     reason: gateForm.reason,
     decision: 'trade'

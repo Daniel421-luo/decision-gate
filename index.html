@@ -514,15 +514,12 @@ async function fetchMarketData(){
   if(fKey){
     try{
       const spy = await fh('SPY');
-      let vix=null, tnx=null;
-      try{ vix = await fh('%5EVIX'); }catch(e){ errors.push('Finnhub VIX: '+e.message); }
-      try{ tnx = await fh('%5ETNX'); }catch(e){ errors.push('Finnhub TNX: '+e.message); }
-      if(vix!==null && tnx!==null){
-        results.push({src:'Finnhub', spy, vix, tnx});
-      } else if(vix!==null || tnx!==null){
-        results.push({src:'Finnhub', spy, vix:vix||0, tnx:tnx||0, partial:true});
-      }
-    }catch(e){ errors.push('Finnhub: '+e.message); }
+      let vix=null, tnx=null, vixErr='', tnxErr='';
+      try{ vix = await fh('%5EVIX'); }catch(e){ vixErr = e.message; errors.push('VIX: '+e.message); }
+      try{ tnx = await fh('%5ETNX'); }catch(e){ tnxErr = e.message; errors.push('10Y: '+e.message); }
+      const missing = (vix===null?1:0)+(tnx===null?1:0);
+      results.push({src:'Finnhub', spy, vix:vix||0, tnx:tnx||0, partial: missing>0, missingVix:!vix, missingTnx:!tnx});
+    }catch(e){ errors.push('Finnhub SPY: '+e.message); }
   }
 
   // Source 2: Twelve Data
@@ -530,19 +527,15 @@ async function fetchMarketData(){
     try{
       const spy = await td('SPY');
       let vix=null, tnx=null;
-      try{ vix = await td('VIX'); }catch(e){ errors.push('TwelveData VIX: '+e.message); }
-      try{ tnx = await td('TNX'); }catch(e){ errors.push('TwelveData TNX: '+e.message); }
-      if(vix!==null && tnx!==null){
-        results.push({src:'TwelveData', spy, vix, tnx});
-      } else if(vix!==null || tnx!==null){
-        results.push({src:'TwelveData', spy, vix:vix||0, tnx:tnx||0, partial:true});
-      }
-    }catch(e){ errors.push('TwelveData: '+e.message); }
+      try{ vix = await td('VIX'); }catch(e){ errors.push('VIX: '+e.message); }
+      try{ tnx = await td('TNX'); }catch(e){ errors.push('10Y: '+e.message); }
+      results.push({src:'TwelveData', spy, vix:vix||0, tnx:tnx||0, partial: (vix===null||tnx===null)});
+    }catch(e){ errors.push('TwelveData SPY: '+e.message); }
   }
 
   if(results.length === 0){
     if(btn){ btn.textContent = '📡 重试'; btn.disabled = false; }
-    showToast('⚠️ 获取失败: ' + (errors.join('; ') || '未知错误'));
+    showToast('⚠️ 获取失败: ' + (errors.slice(0,2).join('; ') || '网络错误'));
     return;
   }
 
@@ -625,7 +618,10 @@ async function saveApiKey(){
     }catch(e){ status.push('TwelveData ❌ 网络错误'); }
   }
   showToast('💾 ' + status.join(' · '));
-  if(status.some(s=>s.includes('✅'))) resetGate();
+  if(status.some(s=>s.includes('✅'))){
+    resetGate();
+    setTimeout(fetchMarketData, 300); // Auto-fetch after saving keys
+  }
 }
 function toggleRow(label, id, val, hint){
   return `<div class="toggle-row">

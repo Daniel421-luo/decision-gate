@@ -595,6 +595,16 @@ async function fetchAllNews(){
     fetchEvents()
   ]);
 
+  // Collect all headlines for batch translation
+  const allHeadlines = [
+    ...(general||[]).slice(0,4).map(n => n.headline),
+    ...(nvda||[]).slice(0,2).map(n => n.headline),
+    ...(soxx||[]).slice(0,2).map(n => n.headline)
+  ].filter(Boolean);
+
+  // Translate all headlines (uses cache, async)
+  const translations = await batchTranslate(allHeadlines);
+
   let html = '';
 
   // Events first
@@ -602,7 +612,8 @@ async function fetchAllNews(){
     html += '<div style="margin-bottom:8px">';
     events.forEach(e => {
       const impact = e.impact === 'high' ? '🔴' : (e.impact === 'medium' ? '🟡' : '');
-      html += `<div style="font-size:.82rem;padding:4px 0;color:var(--red)">📅 ${impact} ${e.event} ${e.actual?'→ '+e.actual:''}</div>`;
+      const evtName = e.event || '';
+      html += `<div style="font-size:.82rem;padding:4px 0;color:var(--red)">📅 ${impact} ${evtName} ${e.actual?'→ '+e.actual:''}</div>`;
     });
     html += '</div>';
   }
@@ -613,7 +624,8 @@ async function fetchAllNews(){
     html += '<div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">📰 标的动态</div>';
     tickerNews.slice(0,4).forEach(n => {
       const src = n.related || n.source || '';
-      html += `<div style="font-size:.82rem;padding:3px 0;border-bottom:1px solid var(--border)">${n.headline?.slice(0,70)} <span style="color:var(--muted)">${src}</span></div>`;
+      const zh = translations[n.headline] || n.headline?.slice(0,70);
+      html += `<div style="font-size:.82rem;padding:3px 0;border-bottom:1px solid var(--border)">${zh} <span style="font-size:.7rem;color:var(--muted)">${src}</span></div>`;
     });
   }
 
@@ -621,12 +633,47 @@ async function fetchAllNews(){
   if(general.length > 0){
     html += '<div style="font-size:.78rem;color:var(--muted);margin:8px 0 4px">🌍 市场要闻</div>';
     general.slice(0,4).forEach(n => {
-      html += `<div style="font-size:.8rem;padding:3px 0;border-bottom:1px solid var(--border)">${n.headline?.slice(0,80)}</div>`;
+      const zh = translations[n.headline] || n.headline?.slice(0,80);
+      html += `<div style="font-size:.8rem;padding:3px 0;border-bottom:1px solid var(--border)">${zh}</div>`;
     });
   }
 
   if(!html) html = '<div style="font-size:.82rem;color:var(--muted);padding:8px">暂无更新</div>';
   if(el) el.innerHTML = html;
+}
+
+// ═══ Translation (MyMemory free API + localStorage cache) ═══
+async function translateText(text){
+  if(!text || !/[a-zA-Z]/.test(text)) return text; // Already Chinese or empty
+  // Check cache
+  const cache = JSON.parse(localStorage.getItem('trans_cache') || '{}');
+  if(cache[text]) return cache[text];
+  try{
+    const r = await fetch('https://api.mymemory.translated.net/get?q='+encodeURIComponent(text)+'&langpair=en|zh');
+    const d = await r.json();
+    const zh = d?.responseData?.translatedText || text;
+    // Cache it
+    cache[text] = zh;
+    // Keep cache under 500 entries
+    const keys = Object.keys(cache);
+    if(keys.length > 500){ delete cache[keys[0]]; }
+    localStorage.setItem('trans_cache', JSON.stringify(cache));
+    return zh;
+  }catch(e){ return text; }
+}
+
+async function batchTranslate(texts){
+  const results = {};
+  const unique = [...new Set(texts.filter(t => t && /[a-zA-Z]/.test(t)))];
+  if(unique.length === 0) return results;
+  // Translate in parallel with small delay between batches to respect rate limit
+  for(let i=0; i<unique.length; i+=3){
+    const batch = unique.slice(i, i+3);
+    const translated = await Promise.all(batch.map(t => translateText(t).catch(()=>t)));
+    batch.forEach((t, j) => { results[t] = translated[j]; });
+    if(i+3 < unique.length) await new Promise(r => setTimeout(r, 200));
+  }
+  return results;
 }
 
 function prevDay(){ const d=new Date(); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); }
